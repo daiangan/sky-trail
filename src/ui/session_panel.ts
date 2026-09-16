@@ -28,11 +28,19 @@ import { clear, confirm, el } from './dom';
 import { hasFitsExtension, pickDirectory, pickFiles, readLightBatches } from './file_io';
 import type { Store } from './store';
 
+export interface OverlayVisibility {
+  visible: boolean;
+  counter: boolean;
+  stats: boolean;
+  chart: boolean;
+}
+
 export interface AppState {
   project: Project;
   selectedSessionId: number | null;
   loading: { current: number; total: number; fileName: string } | null;
   playback: PlaybackSnapshot;
+  overlay: OverlayVisibility;
 }
 
 export function mountSessionPanel(root: HTMLElement, store: Store<AppState>): () => void {

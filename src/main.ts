@@ -1,8 +1,12 @@
 import './style.css';
 
-import { createProject } from './model';
+import { createProject, setFallbackCoords, type Project } from './model';
 import { DomeView } from './render/dome_view';
 import type { PlaybackSnapshot } from './render/playback_controller';
+import { loadFallbackCoords } from './model/persistence';
+import { mountCoordinatesDialog } from './ui/coordinates_dialog';
+import { mountControlsPanel } from './ui/controls_panel';
+import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
 import { Store } from './ui/store';
 
@@ -10,6 +14,8 @@ const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) {
   throw new Error('Missing #app mount node in index.html');
 }
+
+const remembered = loadFallbackCoords();
 
 const initialPlayback: PlaybackSnapshot = {
   revealProgress: 0,
@@ -20,11 +26,26 @@ const initialPlayback: PlaybackSnapshot = {
   isFinished: false,
 };
 
+const initialOverlay = {
+  visible: true,
+  counter: true,
+  stats: true,
+  chart: true,
+};
+
+const initialProject: Project = setFallbackCoords(createProject('My project'), {
+  raDeg: remembered.raDeg,
+  decDeg: remembered.decDeg,
+  latDeg: remembered.latDeg,
+  lonDeg: remembered.lonDeg,
+});
+
 const initialState: AppState = {
-  project: createProject('My project'),
+  project: initialProject,
   selectedSessionId: null,
   loading: null,
   playback: initialPlayback,
+  overlay: initialOverlay,
 };
 
 const store = new Store<AppState>(initialState);
@@ -39,30 +60,51 @@ const canvasArea = document.createElement('main');
 canvasArea.className = 'app-layout__canvas';
 const canvas = document.createElement('canvas');
 canvas.className = 'dome-canvas';
-canvasArea.appendChild(canvas);
+const overlayLayer = document.createElement('div');
+overlayLayer.className = 'overlay-layer';
+canvasArea.append(canvas, overlayLayer);
 
 const controlsArea = document.createElement('aside');
 controlsArea.className = 'app-layout__panel app-layout__panel--right';
-controlsArea.innerHTML = `
-  <div class="controls-placeholder">
-    <h2 class="controls-placeholder__title">Controls</h2>
-    <p class="controls-placeholder__hint">Phase 5 will land here.</p>
-  </div>
-`;
+
+const dialogRoot = document.createElement('div');
+dialogRoot.className = 'dialog-layer';
 
 layout.append(sessionPanel, canvasArea, controlsArea);
-root.replaceChildren(layout);
+root.append(layout, dialogRoot);
 
 const domeView = new DomeView({
   canvas,
+  defaultPointsPerSecond: 5,
+  defaultCameraRotationDegPerSec: 4,
+  defaultPointSize: 6,
   onPlaybackChange: (snapshot) => {
     store.set((s) => ({ ...s, playback: snapshot }));
   },
 });
 
 mountSessionPanel(sessionPanel, store);
+mountOverlay(overlayLayer, store);
+
+const coordinatesDialog = mountCoordinatesDialog(dialogRoot, store);
+
+const controlsApi = mountControlsPanel(controlsArea, store, {
+  onPointsPerSecondChange: (value) => domeView.setPointsPerSecond(value),
+  onCameraSpeedChange: (value) => domeView.setCameraRotationSpeed(value),
+  onPointSizeChange: (value) => domeView.setPointSize(value),
+  onPlayPause: () => domeView.togglePlay(),
+  onReset: () => domeView.reset(),
+  onCoordinates: () => coordinatesDialog.open(),
+  onExport: () => {
+    window.alert('Video export arrives in Phase 6.');
+  },
+});
+
+domeView.setProject(store.get().project);
 
 store.subscribe((state) => {
   domeView.setProject(state.project);
+  controlsApi.setPlaybackState(state.playback);
 });
-domeView.setProject(store.get().project);
+
+controlsApi.setPlaybackState(store.get().playback);
