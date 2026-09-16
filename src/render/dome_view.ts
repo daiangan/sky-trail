@@ -155,12 +155,53 @@ export class DomeView {
     this.playback.pause();
   }
 
+  /** Pauses both playback and the render loop so a manual driver (e.g. the
+   *  video exporter) can drive frames one at a time. */
+  freeze(): void {
+    this.playback.pause();
+    this.stop();
+  }
+
+  /** Resumes the render loop after `freeze()` was called. */
+  resume(): void {
+    this.start();
+  }
+
   togglePlay(): void {
     this.playback.togglePlay();
   }
 
   reset(): void {
     this.playback.reset();
+  }
+
+  /** Advance the playback controller by `dt` seconds without touching the
+   *  RAF loop -- used by the video exporter between rendered frames. */
+  tickPlayback(dt: number): void {
+    this.playback.tick(dt);
+    this.updateRevealedPoints(this.playback.snapshot().revealCount);
+  }
+
+  /** Render one frame to the WebGL canvas (no playback advance). */
+  renderOnce(): void {
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  getCanvasDimensions(): { width: number; height: number } {
+    return { width: this.canvas.width, height: this.canvas.height };
+  }
+
+  getPointsPerSecond(): number {
+    return this.playback.getPointsPerSecond();
+  }
+
+  playbackLength(): number {
+    return this.playback.snapshot().timelineLength;
   }
 
   onPlaybackChange(listener: (snapshot: PlaybackSnapshot) => void): () => void {

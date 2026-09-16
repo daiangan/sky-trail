@@ -8,23 +8,44 @@
  * 48-sample compute only runs when the active session changes, not on
  * every reveal tick (the Python project's optimization, kept for
  * parity even though Canvas2D is much cheaper than matplotlib).
+ *
+ * `renderTo(ctx, width, height)` mirrors the live DOM overlay onto a
+ * 2D canvas at the given size, used by the video exporter to capture
+ * the same visual the user sees.
  */
 
-import { buildTimeline, type TimelinePoint } from '../model/timeline';
-import { formatDuration, formatGb } from '../model/timeline';
-import { ALTITUDE_CHART_HOURS, computeAltitudeCurve, drawAltitudeChart } from './altitude_chart';
-import { clear, el } from './dom';
+import { buildTimeline, formatDuration, formatGb, type TimelinePoint } from '../model/timeline';
 import type { OverlayVisibility } from './session_panel';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
+import { ALTITUDE_CHART_HOURS, computeAltitudeCurve, drawAltitudeChart } from './altitude_chart';
+import { clear, el } from './dom';
 
 const CHART_WIDTH = 220;
 const CHART_HEIGHT = 120;
+const COUNTER_TOP = 16;
+const COUNTER_LEFT = 16;
+const COUNTER_HEIGHT = 64;
+const COUNTER_FONT = '700 2rem system-ui, sans-serif';
+const STATS_TOP = COUNTER_TOP + COUNTER_HEIGHT + 12;
+const STATS_LEFT = COUNTER_LEFT;
+const STATS_FONT = '0.75rem system-ui, sans-serif';
+const STATS_LABEL_FONT = '600 0.625rem system-ui, sans-serif';
+const STATS_LINE_GAP = 18;
+const CHART_BOTTOM_OFFSET = 16;
+const CHART_RIGHT_OFFSET = 16;
+
+export interface OverlaySnapshot {
+  counterText: string;
+  statsLines: { label: string; value: string }[];
+  chartAltitudes: number[] | null;
+  visibility: OverlayVisibility;
+}
 
 export function mountOverlay(
   root: HTMLElement,
   store: Store<AppState>,
-): { setVisibility: (state: OverlayVisibility) => void } {
+): { getSnapshot: () => OverlaySnapshot; setVisibility: (state: OverlayVisibility) => void } {
   clear(root);
   root.classList.add('overlay-root');
 
@@ -49,15 +70,14 @@ export function mountOverlay(
     throw new Error('Could not get 2D context for altitude chart canvas');
   }
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  chartCanvas.width = CHART_WIDTH;
-  chartCanvas.height = CHART_HEIGHT;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
   let cachedNightIndex: number | null = null;
   let cachedCurve: number[] | null = null;
   let lastTimeline: TimelinePoint[] = [];
+  let currentVisibility: OverlayVisibility = store.get().overlay;
+  let currentSnapshot: OverlaySnapshot = emptySnapshot(currentVisibility);
 
-  const update = (state: AppState) => {
+  const recompute = (state: AppState) => {
     if (lastTimeline.length === 0 && state.project.sessions.length > 0) {
       lastTimeline = buildTimeline(state.project);
     } else if (state.project.sessions.length === 0) {
@@ -69,6 +89,7 @@ export function mountOverlay(
       cachedCurve = null;
     }
 
+    currentVisibility = state.overlay;
     applyVisibility(state.overlay);
     const snapshot = state.playback;
     const point = lastTimeline[snapshot.revealCount - 1];
@@ -77,27 +98,29 @@ export function mountOverlay(
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
       drawEmptyChart(ctx);
+      currentSnapshot = {
+        counterText: formatDuration(0),
+        statsLines: [],
+        chartAltitudes: null,
+        visibility: currentVisibility,
+      };
       return;
     }
 
     counter.textContent = formatDuration(point.cumulativeExptimeS);
+    const statsLines = [
+      { label: 'Subframes', value: String(point.cumulativeSubframes) },
+      { label: 'Data', value: formatGb(point.cumulativeBytes) },
+      { label: 'Date', value: (point.light.dateObs ?? '').slice(0, 10) },
+      { label: 'Night', value: `${point.nightIndex} of ${point.totalNights}` },
+    ];
     stats.replaceChildren(
-      el('div', {}, [
-        el('span', { class: 'overlay__label' }, ['Subframes:']),
-        ` ${point.cumulativeSubframes}`,
-      ]),
-      el('div', {}, [
-        el('span', { class: 'overlay__label' }, ['Data:']),
-        ` ${formatGb(point.cumulativeBytes)}`,
-      ]),
-      el('div', {}, [
-        el('span', { class: 'overlay__label' }, ['Date:']),
-        ` ${(point.light.dateObs ?? '').slice(0, 10)}`,
-      ]),
-      el('div', {}, [
-        el('span', { class: 'overlay__label' }, ['Night:']),
-        ` ${point.nightIndex} of ${point.totalNights}`,
-      ]),
+      ...statsLines.map((line) =>
+        el('div', {}, [
+          el('span', { class: 'overlay__label' }, [`${line.label}:`]),
+          ` ${line.value}`,
+        ]),
+      ),
     );
 
     if (cachedNightIndex !== point.nightIndex) {
@@ -106,38 +129,167 @@ export function mountOverlay(
     }
 
     drawChart(ctx, cachedCurve ?? [], ALTITUDE_CHART_HOURS);
+
+    currentSnapshot = {
+      counterText: formatDuration(point.cumulativeExptimeS),
+      statsLines,
+      chartAltitudes: cachedCurve,
+      visibility: currentVisibility,
+    };
   };
 
-  store.subscribe(update);
-  update(store.get());
+  store.subscribe(recompute);
+  recompute(store.get());
 
   return {
+    getSnapshot: () => currentSnapshot,
     setVisibility: (visibility: OverlayVisibility) => {
+      currentVisibility = visibility;
+      currentSnapshot = { ...currentSnapshot, visibility };
       applyVisibility(visibility);
     },
   };
+}
+
+function emptySnapshot(visibility: OverlayVisibility): OverlaySnapshot {
+  return { counterText: formatDuration(0), statsLines: [], chartAltitudes: null, visibility };
+}
+
+export function renderOverlayTo(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  snapshot: OverlaySnapshot,
+): void {
+  ctx.save();
+  if (snapshot.visibility.visible && snapshot.visibility.counter) {
+    drawCounter(ctx, width, height, snapshot.counterText);
+  }
+  if (snapshot.visibility.visible && snapshot.visibility.stats) {
+    drawStats(ctx, width, height, snapshot.statsLines);
+  }
+  if (snapshot.visibility.visible && snapshot.visibility.chart) {
+    drawChartTo(ctx, width, height, snapshot.chartAltitudes);
+  }
+  ctx.restore();
+}
+
+function drawCounter(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+): void {
+  ctx.save();
+  const boxW = 200;
+  const boxH = 56;
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+  roundRect(ctx, COUNTER_LEFT, COUNTER_TOP, boxW, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = 'rgb(220, 226, 240)';
+  ctx.font = COUNTER_FONT;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(text, COUNTER_LEFT + 14, COUNTER_TOP + boxH / 2 + 2);
+  ctx.restore();
+  void width;
+  void height;
+}
+
+function drawStats(
+  ctx: CanvasRenderingContext2D,
+  _width: number,
+  _height: number,
+  lines: { label: string; value: string }[],
+): void {
+  ctx.save();
+  const boxW = 200;
+  const lineH = STATS_LINE_GAP;
+  const boxH = lineH * lines.length + 16;
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+  roundRect(ctx, STATS_LEFT, STATS_TOP, boxW, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.font = STATS_FONT;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgb(220, 226, 240)';
+  for (let i = 0; i < lines.length; i += 1) {
+    const y = STATS_TOP + 8 + i * lineH;
+    ctx.font = STATS_LABEL_FONT;
+    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+    ctx.fillText(`${lines[i]!.label.toUpperCase()}:`, STATS_LEFT + 12, y);
+    ctx.font = STATS_FONT;
+    ctx.fillStyle = 'rgb(220, 226, 240)';
+    ctx.fillText(` ${lines[i]!.value}`, STATS_LEFT + 12 + 70, y);
+  }
+  ctx.restore();
+}
+
+function drawChartTo(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  altitudes: number[] | null,
+): void {
+  ctx.save();
+  const x = width - CHART_WIDTH - CHART_RIGHT_OFFSET;
+  const y = height - CHART_HEIGHT - CHART_BOTTOM_OFFSET;
+  if (altitudes === null || altitudes.length === 0) {
+    drawAltitudeChart(ctx, [0, 0], 0);
+    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data yet', x + CHART_WIDTH / 2, y + CHART_HEIGHT / 2);
+  } else {
+    drawAltitudeChart(ctx, altitudes, altitudes.length - 1);
+    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${ALTITUDE_CHART_HOURS}h window`, x + CHART_WIDTH - 10, y + CHART_HEIGHT - 10);
+  }
+  ctx.restore();
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 function applyVisibility(visibility: OverlayVisibility): void {
   const counter = document.getElementById('overlay-counter');
   const stats = document.getElementById('overlay-stats');
   const chart = document.getElementById('overlay-chart-wrap');
-  if (counter)
-    counter.style.display = visible(visibility.visible && visibility.counter) ? 'block' : 'none';
-  if (stats)
-    stats.style.display = visible(visibility.visible && visibility.stats) ? 'block' : 'none';
-  if (chart)
-    chart.style.display = visible(visibility.visible && visibility.chart) ? 'block' : 'none';
-}
-
-function visible(on: boolean): boolean {
-  return on;
+  if (counter) counter.style.display = visibility.visible && visibility.counter ? 'block' : 'none';
+  if (stats) stats.style.display = visibility.visible && visibility.stats ? 'block' : 'none';
+  if (chart) chart.style.display = visibility.visible && visibility.chart ? 'block' : 'none';
 }
 
 function arraysMatchTimeline(timeline: TimelinePoint[], state: AppState): boolean {
   const sessions = state.project.sessions;
   if (timeline.length === 0) return sessions.length === 0;
-  // Cheap structural check: same session count and same total light count.
   let lights = 0;
   for (const s of sessions) lights += s.lights.length;
   return (

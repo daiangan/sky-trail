@@ -4,8 +4,10 @@ import { createProject, setFallbackCoords, type Project } from './model';
 import { DomeView } from './render/dome_view';
 import type { PlaybackSnapshot } from './render/playback_controller';
 import { loadFallbackCoords } from './model/persistence';
+import { VideoExporter } from './export/video_exporter';
 import { mountCoordinatesDialog } from './ui/coordinates_dialog';
 import { mountControlsPanel } from './ui/controls_panel';
+import { mountExportDialog } from './ui/export_dialog';
 import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
 import { Store } from './ui/store';
@@ -84,9 +86,11 @@ const domeView = new DomeView({
 });
 
 mountSessionPanel(sessionPanel, store);
-mountOverlay(overlayLayer, store);
+const overlay = mountOverlay(overlayLayer, store);
 
 const coordinatesDialog = mountCoordinatesDialog(dialogRoot, store);
+const exportDialog = mountExportDialog(dialogRoot);
+const videoExporter = new VideoExporter(domeView, overlay.getSnapshot);
 
 const controlsApi = mountControlsPanel(controlsArea, store, {
   onPointsPerSecondChange: (value) => domeView.setPointsPerSecond(value),
@@ -96,7 +100,7 @@ const controlsApi = mountControlsPanel(controlsArea, store, {
   onReset: () => domeView.reset(),
   onCoordinates: () => coordinatesDialog.open(),
   onExport: () => {
-    window.alert('Video export arrives in Phase 6.');
+    void exportDialog.open(videoExporter);
   },
 });
 
