@@ -106,8 +106,12 @@ const controlsApi = mountControlsPanel(controlsArea, store, {
 
 domeView.setProject(store.get().project);
 
+let lastProject: Project = store.get().project;
 store.subscribe((state) => {
-  domeView.setProject(state.project);
+  if (state.project !== lastProject) {
+    lastProject = state.project;
+    domeView.setProject(state.project);
+  }
   controlsApi.setPlaybackState(state.playback);
 });
 
