@@ -1,9 +1,18 @@
 :root {
   color-scheme: dark;
   --bg: rgb(8, 10, 18);
+  --bg-panel: rgba(18, 22, 34, 0.72);
+  --bg-row: rgba(28, 34, 50, 0.55);
+  --bg-row-selected: rgba(79, 130, 200, 0.18);
+  --border: rgba(120, 132, 158, 0.18);
+  --border-strong: rgba(120, 132, 158, 0.35);
   --fg: rgb(220, 226, 240);
   --fg-dim: rgb(150, 158, 178);
+  --fg-faint: rgb(96, 104, 124);
   --accent: rgb(79, 195, 247);
+  --danger: rgb(239, 83, 80);
+  --radius: 8px;
+  --shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
   font-family:
     system-ui,
     -apple-system,
@@ -24,7 +33,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  min-height: 100%;
+  height: 100%;
   background: var(--bg);
   color: var(--fg);
 }
@@ -32,32 +41,317 @@ body {
 body {
   min-height: 100vh;
   display: grid;
-  place-items: center;
+  place-items: stretch;
 }
 
-.boot {
+#app {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Three-panel layout                                                  */
+/* ------------------------------------------------------------------ */
+
+.app-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 280px;
+  min-height: 100vh;
+}
+
+.app-layout__panel {
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.app-layout__panel--right {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+.app-layout__canvas {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+  .app-layout__panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 40vh;
+  }
+  .app-layout__panel--right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Placeholders                                                         */
+/* ------------------------------------------------------------------ */
+
+.canvas-placeholder,
+.controls-placeholder {
   text-align: center;
+  color: var(--fg-dim);
   padding: 2rem;
 }
 
-.boot__title {
-  font-size: clamp(2rem, 6vw, 3.5rem);
+.canvas-placeholder__title {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
   font-weight: 600;
   letter-spacing: 0.08em;
   margin: 0 0 0.5rem;
   color: var(--fg);
 }
 
-.boot__subtitle {
-  font-size: 1rem;
-  color: var(--fg-dim);
-  margin: 0 0 1.5rem;
+.canvas-placeholder__subtitle,
+.controls-placeholder__hint,
+.canvas-placeholder__hint {
+  font-size: 0.875rem;
+  margin: 0.25rem 0;
+  color: var(--fg-faint);
 }
 
-.boot__phase {
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
+.controls-placeholder__title {
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--fg-dim);
+  margin: 0 0 0.75rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Session panel                                                        */
+/* ------------------------------------------------------------------ */
+
+.session-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.session-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.session-panel__header h2 {
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
   margin: 0;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-list__empty {
+  font-size: 0.85rem;
+  color: var(--fg-faint);
+  padding: 1rem 0.5rem;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-row);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.session-row:hover {
+  border-color: var(--border-strong);
+}
+
+.session-row--selected {
+  background: var(--bg-row-selected);
+  border-color: rgba(79, 195, 247, 0.45);
+}
+
+.session-row__swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.session-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.session-row__name {
+  width: 100%;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  padding: 0;
+  outline: none;
+}
+
+.session-row__name:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.session-row__summary {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.session-row__count,
+.session-row__time,
+.session-row__date {
+  white-space: nowrap;
+}
+
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.iconbtn:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.iconbtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.iconbtn--danger:hover {
+  color: var(--danger);
+  border-color: rgba(239, 83, 80, 0.5);
+}
+
+/* ------------------------------------------------------------------ */
+/* Action bar + progress                                                */
+/* ------------------------------------------------------------------ */
+
+.session-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.session-actions__hint {
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+  margin: 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: rgb(8, 10, 18);
+  font-weight: 500;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: rgb(105, 205, 247);
+  border-color: rgb(105, 205, 247);
+}
+
+.session-progress__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.session-progress__bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.session-progress__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.session-progress__text {
+  font-size: 0.7rem;
+  color: var(--fg-faint);
+  letter-spacing: 0.04em;
 }
