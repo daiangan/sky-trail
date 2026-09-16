@@ -71,7 +71,7 @@ export function mountControlsPanel(
     min: 0,
     max: 60,
     step: 1,
-    initialValue: 4,
+    initialValue: 0,
     unit: ' °/sec',
     onInput: (value) => handlers.onCameraSpeedChange(value),
   });

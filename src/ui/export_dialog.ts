@@ -1,8 +1,10 @@
 /**
- * Export progress dialog. Shows a bar + percentage + phase label, a
- * Cancel button that aborts the in-flight `VideoExportHandle`, and
- * (on success) a Download button that triggers a save-as for the
- * resulting blob.
+ * Export progress dialog. Shows a bar + percentage + phase label,
+ * a Cancel button while the export is running, and (on success)
+ * Download + Close buttons that stay visible until the user
+ * explicitly dismisses the dialog. The dialog used to close
+ * automatically on success, which meant users missed the
+ * "Download" affordance.
  */
 
 import { clear, el } from './dom';
@@ -41,10 +43,13 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     { class: 'btn btn--primary', type: 'button', id: 'export-download' },
     ['Download'],
   );
+  const closeBtn = el('button', { class: 'btn', type: 'button', id: 'export-close' }, ['Close']);
   downloadBtn.style.display = 'none';
+  closeBtn.style.display = 'none';
 
   let currentHandle: { cancel: () => void } | null = null;
   let currentResult: VideoExportResult | null = null;
+  let currentResolve: ((value: VideoExportResult | null) => void) | null = null;
 
   cancelBtn.addEventListener('click', () => {
     currentHandle?.cancel();
@@ -53,9 +58,22 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
   downloadBtn.addEventListener('click', () => {
     if (!currentResult) return;
     triggerDownload(currentResult);
+    close();
   });
 
-  const buttons = el('div', { class: 'dialog__buttons' }, [cancelBtn, downloadBtn]);
+  closeBtn.addEventListener('click', () => {
+    close();
+  });
+
+  function close(): void {
+    root.classList.remove('dialog-root--open');
+    if (currentResolve) {
+      currentResolve(currentResult);
+      currentResolve = null;
+    }
+  }
+
+  const buttons = el('div', { class: 'dialog__buttons' }, [cancelBtn, downloadBtn, closeBtn]);
   const dialog = el(
     'div',
     { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'export-title' },
@@ -64,7 +82,10 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
 
   const backdrop = el('div', { class: 'dialog__backdrop' }, [dialog]);
   backdrop.addEventListener('click', (event) => {
-    if (event.target === backdrop) currentHandle?.cancel();
+    if (event.target === backdrop) {
+      if (currentResult) close();
+      else currentHandle?.cancel();
+    }
   });
   root.appendChild(backdrop);
 
@@ -74,39 +95,46 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     progressText.textContent = formatProgress(progress);
   }
 
+  function resetUi(): void {
+    errorText.textContent = '';
+    downloadBtn.style.display = 'none';
+    closeBtn.style.display = 'none';
+    cancelBtn.style.display = '';
+    progressText.textContent = 'Preparing…';
+    setFill(0);
+  }
+
   return {
-    open: async (exporter: VideoExporter, options: VideoExportOptions = {}) => {
-      errorText.textContent = '';
-      downloadBtn.style.display = 'none';
-      cancelBtn.style.display = '';
-      progressText.textContent = 'Preparing…';
-      setFill(0);
-      root.classList.add('dialog-root--open');
-
-      const handle = exporter.start({ ...options, onProgress: applyProgress });
-      currentHandle = handle;
-      currentResult = null;
-
-      try {
-        const result = await handle.promise;
-        currentResult = result;
-        currentHandle = null;
-        cancelBtn.style.display = 'none';
-        downloadBtn.style.display = '';
-        setFill(1);
-        progressText.textContent = `Done — ${result.width}×${result.height} @ ${result.fps} fps (${result.durationSeconds.toFixed(1)}s)`;
-        root.classList.remove('dialog-root--open');
-        return result;
-      } catch (err) {
-        currentHandle = null;
+    open: (exporter: VideoExporter, options: VideoExportOptions = {}) =>
+      new Promise((resolve) => {
+        currentResolve = resolve;
         currentResult = null;
-        cancelBtn.style.display = 'none';
-        progressText.textContent = 'Export failed.';
-        errorText.textContent = err instanceof Error ? err.message : String(err);
-        root.classList.remove('dialog-root--open');
-        return null;
-      }
-    },
+        currentHandle = null;
+        resetUi();
+        root.classList.add('dialog-root--open');
+
+        const handle = exporter.start({ ...options, onProgress: applyProgress });
+        currentHandle = handle;
+
+        handle.promise
+          .then((result) => {
+            currentResult = result;
+            currentHandle = null;
+            cancelBtn.style.display = 'none';
+            downloadBtn.style.display = '';
+            closeBtn.style.display = '';
+            setFill(1);
+            progressText.textContent = `Done — ${result.width}×${result.height} @ ${result.fps} fps (${result.durationSeconds.toFixed(1)}s)`;
+          })
+          .catch((err: unknown) => {
+            currentResult = null;
+            currentHandle = null;
+            cancelBtn.style.display = 'none';
+            closeBtn.style.display = '';
+            progressText.textContent = 'Export failed.';
+            errorText.textContent = err instanceof Error ? err.message : String(err);
+          });
+      }),
   };
 }
 

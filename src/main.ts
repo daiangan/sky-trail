@@ -78,7 +78,7 @@ root.append(layout, dialogRoot);
 const domeView = new DomeView({
   canvas,
   defaultPointsPerSecond: 5,
-  defaultCameraRotationDegPerSec: 4,
+  defaultCameraRotationDegPerSec: 0,
   defaultPointSize: 6,
   onPlaybackChange: (snapshot) => {
     store.set((s) => ({ ...s, playback: snapshot }));

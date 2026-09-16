@@ -36,6 +36,10 @@ export interface DomeViewOptions {
   onPlaybackChange?: (snapshot: PlaybackSnapshot) => void;
 }
 
+const DEFAULT_INITIAL_ELEVATION_DEG = 0;
+const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
+const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 0;
+
 export class DomeView {
   private readonly canvas: HTMLCanvasElement;
   private readonly radius: number;
@@ -62,7 +66,8 @@ export class DomeView {
     this.canvas = options.canvas;
     this.radius = options.radius ?? DOME_RADIUS;
     this.pointSize = options.defaultPointSize ?? 6;
-    this.cameraRotationDegPerSec = options.defaultCameraRotationDegPerSec ?? 4;
+    this.cameraRotationDegPerSec =
+      options.defaultCameraRotationDegPerSec ?? DEFAULT_CAMERA_ROTATION_DEG_PER_SEC;
     this.playback = new PlaybackController();
     if (options.defaultPointsPerSecond !== undefined) {
       this.playback.setPointsPerSecond(options.defaultPointsPerSecond);
@@ -83,8 +88,10 @@ export class DomeView {
     this.scene.background = new THREE.Color(options.backgroundColor ?? 0x080a12);
 
     const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
-    const initialElevationDeg = options.initialCamera?.elevationDeg ?? 25;
-    const initialAzimuthDeg = options.initialCamera?.azimuthDeg ?? 45;
+    const initialElevationDeg =
+      options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG;
+    const initialAzimuthDeg =
+      options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG;
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
