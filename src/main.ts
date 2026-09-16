@@ -1,6 +1,8 @@
 import './style.css';
 
 import { createProject } from './model';
+import { DomeView } from './render/dome_view';
+import type { PlaybackSnapshot } from './render/playback_controller';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
 import { Store } from './ui/store';
 
@@ -9,10 +11,20 @@ if (!root) {
   throw new Error('Missing #app mount node in index.html');
 }
 
+const initialPlayback: PlaybackSnapshot = {
+  revealProgress: 0,
+  revealCount: 0,
+  timelineLength: 0,
+  pointsPerSecond: 5,
+  isPlaying: false,
+  isFinished: false,
+};
+
 const initialState: AppState = {
   project: createProject('My project'),
   selectedSessionId: null,
   loading: null,
+  playback: initialPlayback,
 };
 
 const store = new Store<AppState>(initialState);
@@ -25,13 +37,9 @@ sessionPanel.className = 'app-layout__panel app-layout__panel--left';
 
 const canvasArea = document.createElement('main');
 canvasArea.className = 'app-layout__canvas';
-canvasArea.innerHTML = `
-  <div class="canvas-placeholder">
-    <h1 class="canvas-placeholder__title">SkyTrail</h1>
-    <p class="canvas-placeholder__subtitle">3D sky-dome preview — Phase 4 will render here.</p>
-    <p class="canvas-placeholder__hint">Pick or drag FITS files into the left panel to start.</p>
-  </div>
-`;
+const canvas = document.createElement('canvas');
+canvas.className = 'dome-canvas';
+canvasArea.appendChild(canvas);
 
 const controlsArea = document.createElement('aside');
 controlsArea.className = 'app-layout__panel app-layout__panel--right';
@@ -45,4 +53,16 @@ controlsArea.innerHTML = `
 layout.append(sessionPanel, canvasArea, controlsArea);
 root.replaceChildren(layout);
 
+const domeView = new DomeView({
+  canvas,
+  onPlaybackChange: (snapshot) => {
+    store.set((s) => ({ ...s, playback: snapshot }));
+  },
+});
+
 mountSessionPanel(sessionPanel, store);
+
+store.subscribe((state) => {
+  domeView.setProject(state.project);
+});
+domeView.setProject(store.get().project);

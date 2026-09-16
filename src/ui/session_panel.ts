@@ -12,6 +12,7 @@
 
 import type { LightFileInfo } from '../fits';
 import type { LightFrame, Project, Session } from '../model';
+import type { PlaybackSnapshot } from '../render/playback_controller';
 import { addSession, moveSession, removeSession } from '../model/project';
 import {
   addLight,
@@ -31,6 +32,7 @@ export interface AppState {
   project: Project;
   selectedSessionId: number | null;
   loading: { current: number; total: number; fileName: string } | null;
+  playback: PlaybackSnapshot;
 }
 
 export function mountSessionPanel(root: HTMLElement, store: Store<AppState>): () => void {

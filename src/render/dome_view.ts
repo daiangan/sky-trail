@@ -1,0 +1,395 @@
+/**
+ * Three.js dome view. Owns the WebGL renderer, the scene graph, the
+ * dome wireframe, one polyline + dots per session, and the "current
+ * position" marker. Drives playback via the PlaybackController and
+ * renders once per requestAnimationFrame tick.
+ *
+ * Conventions match the Python project's `render.dome_view`:
+ *   - Z is up, azimuth is clockwise from +Y (north) toward +X (east).
+ *   - DOME_RADIUS is the arbitrary scene unit; camera distance scales
+ *     with it (R*3.2 by default) so the framing is the same as the
+ *     desktop tool for any chosen radius.
+ *   - The auto-orbit only rotates camera azimuth (deg/sec, range 0-60,
+ *     default 4); the user can still drag/zoom on top of it via
+ *     OrbitControls.
+ */
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+import type { Project } from '../model';
+import { buildTimeline, type TimelinePoint } from '../model/timeline';
+import { computeAltAz } from '../astro/altaz';
+import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
+import { buildDomeWireframe } from './dome_geometry';
+import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
+
+export interface DomeViewOptions {
+  canvas: HTMLCanvasElement;
+  radius?: number;
+  backgroundColor?: number;
+  wireframeColor?: number;
+  initialCamera?: { distance?: number; elevationDeg?: number; azimuthDeg?: number };
+  defaultPointSize?: number;
+  defaultCameraRotationDegPerSec?: number;
+  defaultPointsPerSecond?: number;
+  onPlaybackChange?: (snapshot: PlaybackSnapshot) => void;
+}
+
+export class DomeView {
+  private readonly canvas: HTMLCanvasElement;
+  private readonly radius: number;
+  private readonly scene: THREE.Scene;
+  private readonly camera: THREE.PerspectiveCamera;
+  private readonly renderer: THREE.WebGLRenderer;
+  private readonly controls: OrbitControls;
+  private readonly playback: PlaybackController;
+  private readonly wireframe: THREE.LineSegments;
+  private readonly wireframeMaterial: THREE.LineBasicMaterial;
+  private readonly sessionArcs = new Map<number, THREE.LineSegments>();
+  private readonly sessionDots = new Map<number, THREE.Points>();
+  private readonly currentMarker: THREE.Points;
+  private readonly currentMarkerMaterial: THREE.PointsMaterial;
+  private pointSize: number;
+  private cameraRotationDegPerSec: number;
+  private rafHandle: number | null = null;
+  private lastFrameTime: number | null = null;
+  private project: Project | null = null;
+  private timeline: TimelinePoint[] = [];
+  private resolvedPositions = new Map<string, Vec3>();
+
+  constructor(options: DomeViewOptions) {
+    this.canvas = options.canvas;
+    this.radius = options.radius ?? DOME_RADIUS;
+    this.pointSize = options.defaultPointSize ?? 6;
+    this.cameraRotationDegPerSec = options.defaultCameraRotationDegPerSec ?? 4;
+    this.playback = new PlaybackController();
+    if (options.defaultPointsPerSecond !== undefined) {
+      this.playback.setPointsPerSecond(options.defaultPointsPerSecond);
+    }
+    if (options.onPlaybackChange) {
+      this.playback.subscribe(options.onPlaybackChange);
+    }
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: false,
+    });
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setClearColor(options.backgroundColor ?? 0x080a12, 1);
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(options.backgroundColor ?? 0x080a12);
+
+    const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
+    const initialElevationDeg = options.initialCamera?.elevationDeg ?? 25;
+    const initialAzimuthDeg = options.initialCamera?.azimuthDeg ?? 45;
+
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
+
+    this.controls = new OrbitControls(this.camera, this.canvas);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = this.radius * 1.2;
+    this.controls.maxDistance = this.radius * 12;
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+
+    const wireframe = buildDomeWireframe(this.radius);
+    this.wireframeMaterial = new THREE.LineBasicMaterial({
+      color: options.wireframeColor ?? 0x668cb8,
+      transparent: true,
+      opacity: 0.35,
+      linewidth: 1,
+    });
+    const wireframeGeometry = new THREE.BufferGeometry();
+    wireframeGeometry.setAttribute('position', new THREE.BufferAttribute(wireframe.positions, 3));
+    this.wireframe = new THREE.LineSegments(wireframeGeometry, this.wireframeMaterial);
+    this.scene.add(this.wireframe);
+
+    this.currentMarkerMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: this.pointSize * 2,
+      sizeAttenuation: false,
+    });
+    const markerGeometry = new THREE.BufferGeometry();
+    markerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+    this.currentMarker = new THREE.Points(markerGeometry, this.currentMarkerMaterial);
+    this.currentMarker.visible = false;
+    this.scene.add(this.currentMarker);
+
+    this.resize();
+    window.addEventListener('resize', this.resize);
+    this.start();
+  }
+
+  setProject(project: Project): void {
+    this.project = project;
+    this.rebuildArcs();
+  }
+
+  setPointsPerSecond(value: number): void {
+    this.playback.setPointsPerSecond(value);
+  }
+
+  setCameraRotationSpeed(degPerSec: number): void {
+    this.cameraRotationDegPerSec = degPerSec;
+  }
+
+  setPointSize(size: number): void {
+    this.pointSize = Math.max(1, size);
+    this.currentMarkerMaterial.size = this.pointSize * 2;
+    for (const dots of this.sessionDots.values()) {
+      const material = dots.material as THREE.PointsMaterial;
+      material.size = this.pointSize;
+    }
+  }
+
+  play(): void {
+    this.playback.play();
+  }
+
+  pause(): void {
+    this.playback.pause();
+  }
+
+  togglePlay(): void {
+    this.playback.togglePlay();
+  }
+
+  reset(): void {
+    this.playback.reset();
+  }
+
+  onPlaybackChange(listener: (snapshot: PlaybackSnapshot) => void): () => void {
+    return this.playback.subscribe(listener);
+  }
+
+  resize = (): void => {
+    const { clientWidth, clientHeight } = this.canvas;
+    if (clientWidth === 0 || clientHeight === 0) return;
+    this.renderer.setSize(clientWidth, clientHeight, false);
+    this.camera.aspect = clientWidth / clientHeight;
+    this.camera.updateProjectionMatrix();
+  };
+
+  dispose(): void {
+    this.stop();
+    window.removeEventListener('resize', this.resize);
+    this.controls.dispose();
+    this.wireframeMaterial.dispose();
+    this.currentMarkerMaterial.dispose();
+    this.wireframe.geometry.dispose();
+    this.currentMarker.geometry.dispose();
+    for (const arc of this.sessionArcs.values()) {
+      arc.geometry.dispose();
+      (arc.material as THREE.Material).dispose();
+    }
+    for (const dots of this.sessionDots.values()) {
+      dots.geometry.dispose();
+      (dots.material as THREE.Material).dispose();
+    }
+    this.renderer.dispose();
+  }
+
+  private start(): void {
+    if (this.rafHandle !== null) return;
+    const loop = (now: number) => {
+      this.rafHandle = requestAnimationFrame(loop);
+      this.tick(now);
+    };
+    this.rafHandle = requestAnimationFrame(loop);
+  }
+
+  private stop(): void {
+    if (this.rafHandle !== null) {
+      cancelAnimationFrame(this.rafHandle);
+      this.rafHandle = null;
+    }
+  }
+
+  private tick(now: number): void {
+    const lastTime = this.lastFrameTime ?? now;
+    const dt = Math.max(0, Math.min(0.1, (now - lastTime) / 1000));
+    this.lastFrameTime = now;
+
+    this.playback.tick(dt);
+    this.applyAutoOrbit(dt);
+    this.updateRevealedPoints(this.playback.snapshot().revealCount);
+
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  private applyAutoOrbit(dt: number): void {
+    if (this.cameraRotationDegPerSec <= 0) return;
+    const angle = ((this.cameraRotationDegPerSec * Math.PI) / 180) * dt;
+    if (angle === 0) return;
+    const target = this.controls.target;
+    const dx = this.camera.position.x - target.x;
+    const dz = this.camera.position.z - target.z;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    this.camera.position.x = target.x + dx * cos - dz * sin;
+    this.camera.position.z = target.z + dx * sin + dz * cos;
+    this.camera.lookAt(target);
+  }
+
+  private positionCameraFromSpherical(
+    distance: number,
+    elevationDeg: number,
+    azimuthDeg: number,
+  ): void {
+    const elevation = (elevationDeg * Math.PI) / 180;
+    const azimuth = (azimuthDeg * Math.PI) / 180;
+    this.camera.position.set(
+      distance * Math.cos(elevation) * Math.sin(azimuth),
+      distance * Math.sin(elevation),
+      distance * Math.cos(elevation) * Math.cos(azimuth),
+    );
+    this.camera.lookAt(0, 0, 0);
+  }
+
+  private rebuildArcs(): void {
+    for (const arc of this.sessionArcs.values()) {
+      this.scene.remove(arc);
+      arc.geometry.dispose();
+      (arc.material as THREE.Material).dispose();
+    }
+    for (const dots of this.sessionDots.values()) {
+      this.scene.remove(dots);
+      dots.geometry.dispose();
+      (dots.material as THREE.Material).dispose();
+    }
+    this.sessionArcs.clear();
+    this.sessionDots.clear();
+    this.currentMarker.visible = false;
+
+    if (!this.project) return;
+    this.timeline = buildTimeline(this.project);
+    this.resolvedPositions = resolveTimelinePositions(this.timeline);
+    this.playback.setTimelineLength(this.timeline.length);
+
+    const project = this.project;
+    for (let i = 0; i < project.sessions.length; i += 1) {
+      const session = project.sessions[i]!;
+      const color = new THREE.Color(session.color);
+      const arcPositions = this.timeline
+        .filter((point) => point.nightIndex === i + 1)
+        .map((point) => this.resolvedPositions.get(point.light.path) ?? null);
+
+      const arcGeometry = new THREE.BufferGeometry();
+      arcGeometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(filteredToFloat32(arcPositions), 3),
+      );
+      const arcMaterial = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.95,
+      });
+      const arc = new THREE.Line(arcGeometry, arcMaterial);
+      this.scene.add(arc);
+      this.sessionArcs.set(i, arc as unknown as THREE.LineSegments);
+
+      const dotsGeometry = new THREE.BufferGeometry();
+      dotsGeometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(filteredToFloat32(arcPositions), 3),
+      );
+      const dotsMaterial = new THREE.PointsMaterial({
+        color,
+        size: this.pointSize,
+        sizeAttenuation: false,
+      });
+      const dots = new THREE.Points(dotsGeometry, dotsMaterial);
+      this.scene.add(dots);
+      this.sessionDots.set(i, dots);
+    }
+
+    this.updateRevealedPoints(0);
+  }
+
+  private updateRevealedPoints(revealCount: number): void {
+    const clamped = Math.max(0, Math.min(revealCount, this.timeline.length));
+    for (let i = 0; i < this.timeline.length; i += 1) {
+      const sessionIndex = this.timeline[i]!.nightIndex - 1;
+      const dots = this.sessionDots.get(sessionIndex);
+      if (!dots) continue;
+      const geometry = dots.geometry as THREE.BufferGeometry;
+      const drawRange = geometry.drawRange;
+      drawRange.start = 0;
+      drawRange.count = i < clamped ? i + 1 : 0;
+      const arc = this.sessionArcs.get(sessionIndex);
+      if (arc) {
+        const arcRange = (arc.geometry as THREE.BufferGeometry).drawRange;
+        arcRange.start = 0;
+        arcRange.count = i < clamped ? i + 1 : 0;
+      }
+    }
+
+    if (clamped > 0) {
+      const lastPoint = this.timeline[clamped - 1]!;
+      const pos = this.resolvedPositions.get(lastPoint.light.path);
+      if (pos) {
+        const geometry = this.currentMarker.geometry as THREE.BufferGeometry;
+        const attr = geometry.getAttribute('position') as THREE.BufferAttribute;
+        attr.setXYZ(0, pos.x, pos.y, pos.z);
+        attr.needsUpdate = true;
+        const session = this.project?.sessions[lastPoint.nightIndex - 1];
+        if (session) {
+          this.currentMarkerMaterial.color = new THREE.Color(session.color);
+        }
+        this.currentMarker.visible = true;
+      }
+    } else {
+      this.currentMarker.visible = false;
+    }
+  }
+}
+
+function resolveTimelinePositions(timeline: readonly TimelinePoint[]): Map<string, Vec3> {
+  const out = new Map<string, Vec3>();
+  for (const point of timeline) {
+    const light = point.light;
+    if (light.altDeg !== null && light.azDeg !== null) {
+      out.set(light.path, altAzToXyz(light.altDeg, light.azDeg));
+      continue;
+    }
+    if (
+      light.objRaDeg === null ||
+      light.objDecDeg === null ||
+      light.siteLatDeg === null ||
+      light.siteLonDeg === null ||
+      !light.dateObs
+    ) {
+      continue;
+    }
+    const when = new Date(light.dateObs);
+    if (Number.isNaN(when.getTime())) continue;
+    const { altitudeDeg, azimuthDeg } = computeAltAz(
+      when,
+      {
+        latitudeDeg: light.siteLatDeg,
+        longitudeDeg: light.siteLonDeg,
+      },
+      { raDeg: light.objRaDeg, decDeg: light.objDecDeg },
+    );
+    out.set(light.path, altAzToXyz(altitudeDeg, azimuthDeg));
+  }
+  return out;
+}
+
+function filteredToFloat32(positions: Array<Vec3 | null>): Float32Array {
+  const out = new Float32Array(positions.length * 3);
+  for (let i = 0; i < positions.length; i += 1) {
+    const p = positions[i];
+    if (!p) continue;
+    out[i * 3] = p.x;
+    out[i * 3 + 1] = p.y;
+    out[i * 3 + 2] = p.z;
+  }
+  return out;
+}
