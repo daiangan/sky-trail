@@ -38,7 +38,7 @@ export interface DomeViewOptions {
 
 const DEFAULT_INITIAL_ELEVATION_DEG = 0;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
-const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 0;
+const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 4;
 
 export class DomeView {
   private readonly canvas: HTMLCanvasElement;
