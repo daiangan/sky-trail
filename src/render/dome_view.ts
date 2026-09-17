@@ -48,6 +48,7 @@ export class DomeView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly controls: OrbitControls;
   private readonly playback: PlaybackController;
+  private readonly domeGroup: THREE.Group;
   private readonly wireframe: THREE.LineSegments;
   private readonly wireframeMaterial: THREE.LineBasicMaterial;
   private readonly sessionArcs = new Map<number, THREE.LineSegments>();
@@ -87,6 +88,17 @@ export class DomeView {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(options.backgroundColor ?? 0x080a12);
 
+    // The dome geometry uses +Z as zenith (matching the Alt/Az convention
+    // from astronomy-engine and astropy), but Three.js's default up axis is
+    // +Y. Rotate the entire dome group by -90 deg around X so the zenith
+    // appears at the top of the rendered scene. Everything that lives in
+    // Alt/Az world coordinates (wireframe, session arcs, dots, current
+    // marker) is added to this group; the camera stays in standard Three.js
+    // Y-up space.
+    this.domeGroup = new THREE.Group();
+    this.domeGroup.rotation.x = -Math.PI / 2;
+    this.scene.add(this.domeGroup);
+
     const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
     const initialElevationDeg =
       options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG;
@@ -114,7 +126,7 @@ export class DomeView {
     const wireframeGeometry = new THREE.BufferGeometry();
     wireframeGeometry.setAttribute('position', new THREE.BufferAttribute(wireframe.positions, 3));
     this.wireframe = new THREE.LineSegments(wireframeGeometry, this.wireframeMaterial);
-    this.scene.add(this.wireframe);
+    this.domeGroup.add(this.wireframe);
 
     this.currentMarkerMaterial = new THREE.PointsMaterial({
       color: 0xffffff,
@@ -125,7 +137,7 @@ export class DomeView {
     markerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     this.currentMarker = new THREE.Points(markerGeometry, this.currentMarkerMaterial);
     this.currentMarker.visible = false;
-    this.scene.add(this.currentMarker);
+    this.domeGroup.add(this.currentMarker);
 
     this.resize();
     window.addEventListener('resize', this.resize);
@@ -302,12 +314,12 @@ export class DomeView {
 
   private rebuildArcs(): void {
     for (const arc of this.sessionArcs.values()) {
-      this.scene.remove(arc);
+      this.domeGroup.remove(arc);
       arc.geometry.dispose();
       (arc.material as THREE.Material).dispose();
     }
     for (const dots of this.sessionDots.values()) {
-      this.scene.remove(dots);
+      this.domeGroup.remove(dots);
       dots.geometry.dispose();
       (dots.material as THREE.Material).dispose();
     }
@@ -339,7 +351,7 @@ export class DomeView {
         opacity: 0.95,
       });
       const arc = new THREE.Line(arcGeometry, arcMaterial);
-      this.scene.add(arc);
+      this.domeGroup.add(arc);
       this.sessionArcs.set(i, arc as unknown as THREE.LineSegments);
 
       const dotsGeometry = new THREE.BufferGeometry();
@@ -353,7 +365,7 @@ export class DomeView {
         sizeAttenuation: false,
       });
       const dots = new THREE.Points(dotsGeometry, dotsMaterial);
-      this.scene.add(dots);
+      this.domeGroup.add(dots);
       this.sessionDots.set(i, dots);
     }
 
