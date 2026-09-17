@@ -138,6 +138,7 @@ export function mountControlsPanel(
       playBtn.textContent = snapshot.isPlaying ? '❚❚ Pause' : '▶ Play';
       playBtn.disabled = snapshot.timelineLength === 0;
       resetBtn.disabled = snapshot.revealCount === 0;
+      exportBtn.disabled = snapshot.timelineLength === 0;
     },
   };
 }

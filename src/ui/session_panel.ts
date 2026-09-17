@@ -397,7 +397,7 @@ async function runPick(
   });
 }
 
-function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {
+export function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {
   return {
     path: name,
     dateObs: info.dateObs,

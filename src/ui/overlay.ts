@@ -97,6 +97,7 @@ export function mountOverlay(
     if (!point) {
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
+      stats.style.display = 'none';
       drawEmptyChart(ctx);
       currentSnapshot = {
         counterText: formatDuration(0),
@@ -106,6 +107,7 @@ export function mountOverlay(
       };
       return;
     }
+    stats.style.display = '';
 
     counter.textContent = formatDuration(point.cumulativeExptimeS);
     const statsLines = [

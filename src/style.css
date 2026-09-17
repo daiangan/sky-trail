@@ -14,6 +14,7 @@
   --radius: 8px;
   --shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
   font-family:
+    'Inter',
     system-ui,
     -apple-system,
     'Segoe UI',
@@ -23,6 +24,17 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+.session-panel__header h2,
+.controls__title,
+.dialog__title,
+.canvas-empty-state__title,
+.canvas-dropzone__title {
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
 }
 
 * {
@@ -651,4 +663,125 @@ body {
   color: var(--fg-dim);
   margin: 0.5rem 0 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* Canvas Dropzone & Empty State                                      */
+/* ------------------------------------------------------------------ */
+
+.canvas-dropzone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 10, 18, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px dashed rgba(79, 195, 247, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 25;
+}
+
+.canvas-dropzone--active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.canvas-dropzone__card {
+  text-align: center;
+  padding: 2.5rem 3.5rem;
+  background: rgba(18, 24, 40, 0.85);
+  border: 1px solid rgba(79, 195, 247, 0.4);
+  border-radius: 16px;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(79, 195, 247, 0.15);
+}
+
+.canvas-dropzone__icon {
+  font-size: 2.5rem;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+  filter: drop-shadow(0 0 12px rgba(79, 195, 247, 0.6));
+}
+
+.canvas-dropzone__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.canvas-dropzone__subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--fg-dim);
+}
+
+.canvas-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 10;
+  padding: 1.5rem;
+}
+
+.canvas-empty-state__card {
+  pointer-events: auto;
+  max-width: 440px;
+  text-align: center;
+  padding: 2.25rem 2.5rem;
+  background: rgba(14, 18, 30, 0.72);
+  border: 1px solid rgba(120, 132, 158, 0.25);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.canvas-empty-state__badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.12);
+  border: 1px solid rgba(79, 195, 247, 0.25);
+  border-radius: 20px;
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.canvas-empty-state__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.canvas-empty-state__desc {
+  margin: 0 0 1.5rem;
+  font-size: 0.875rem;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+
+.canvas-empty-state__actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }

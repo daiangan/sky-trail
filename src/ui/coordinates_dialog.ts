@@ -140,6 +140,12 @@ export function mountCoordinatesDialog(
   });
   root.appendChild(backdrop);
 
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && root.classList.contains('dialog-root--open')) {
+      api.close();
+    }
+  });
+
   const api: CoordinatesDialogApi = {
     open: () => {
       root.classList.add('dialog-root--open');

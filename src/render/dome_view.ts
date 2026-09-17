@@ -63,6 +63,10 @@ export class DomeView {
   private timeline: TimelinePoint[] = [];
   private resolvedPositions = new Map<string, Vec3>();
 
+  private readonly dotTexture: THREE.CanvasTexture;
+  private readonly ringTexture: THREE.CanvasTexture;
+  private readonly cardinalSprites: THREE.Sprite[] = [];
+
   constructor(options: DomeViewOptions) {
     this.canvas = options.canvas;
     this.radius = options.radius ?? DOME_RADIUS;
@@ -102,8 +106,7 @@ export class DomeView {
     const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
     const initialElevationDeg =
       options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG;
-    const initialAzimuthDeg =
-      options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG;
+    const initialAzimuthDeg = options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG;
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
@@ -128,16 +131,36 @@ export class DomeView {
     this.wireframe = new THREE.LineSegments(wireframeGeometry, this.wireframeMaterial);
     this.domeGroup.add(this.wireframe);
 
+    this.dotTexture = createDotTexture();
+    this.ringTexture = createRingTexture();
+
     this.currentMarkerMaterial = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: this.pointSize * 2,
+      size: this.pointSize * 2.8,
       sizeAttenuation: false,
+      map: this.ringTexture,
+      transparent: true,
+      alphaTest: 0.05,
     });
     const markerGeometry = new THREE.BufferGeometry();
     markerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     this.currentMarker = new THREE.Points(markerGeometry, this.currentMarkerMaterial);
     this.currentMarker.visible = false;
     this.domeGroup.add(this.currentMarker);
+
+    // Cardinal markers along the horizon ring (N, E, S, W)
+    const cardinals = [
+      { label: 'N', x: 0, y: this.radius * 1.06, z: 0 },
+      { label: 'E', x: this.radius * 1.06, y: 0, z: 0 },
+      { label: 'S', x: 0, y: -this.radius * 1.06, z: 0 },
+      { label: 'W', x: -this.radius * 1.06, y: 0, z: 0 },
+    ];
+    for (const card of cardinals) {
+      const sprite = createCardinalSprite(card.label);
+      sprite.position.set(card.x, card.y, card.z);
+      this.domeGroup.add(sprite);
+      this.cardinalSprites.push(sprite);
+    }
 
     this.resize();
     window.addEventListener('resize', this.resize);
@@ -159,7 +182,7 @@ export class DomeView {
 
   setPointSize(size: number): void {
     this.pointSize = Math.max(1, size);
-    this.currentMarkerMaterial.size = this.pointSize * 2;
+    this.currentMarkerMaterial.size = this.pointSize * 2.8;
     for (const dots of this.sessionDots.values()) {
       const material = dots.material as THREE.PointsMaterial;
       material.size = this.pointSize;
@@ -243,6 +266,13 @@ export class DomeView {
     this.currentMarkerMaterial.dispose();
     this.wireframe.geometry.dispose();
     this.currentMarker.geometry.dispose();
+    this.dotTexture.dispose();
+    this.ringTexture.dispose();
+    for (const sprite of this.cardinalSprites) {
+      this.domeGroup.remove(sprite);
+      sprite.material.map?.dispose();
+      sprite.material.dispose();
+    }
     for (const arc of this.sessionArcs.values()) {
       arc.geometry.dispose();
       (arc.material as THREE.Material).dispose();
@@ -363,6 +393,9 @@ export class DomeView {
         color,
         size: this.pointSize,
         sizeAttenuation: false,
+        map: this.dotTexture,
+        transparent: true,
+        alphaTest: 0.1,
       });
       const dots = new THREE.Points(dotsGeometry, dotsMaterial);
       this.domeGroup.add(dots);
@@ -374,19 +407,24 @@ export class DomeView {
 
   private updateRevealedPoints(revealCount: number): void {
     const clamped = Math.max(0, Math.min(revealCount, this.timeline.length));
-    for (let i = 0; i < this.timeline.length; i += 1) {
+
+    // Count how many points belonging to each session appear in the revealed portion
+    const sessionPointCounts = new Map<number, number>();
+    for (let i = 0; i < clamped; i += 1) {
       const sessionIndex = this.timeline[i]!.nightIndex - 1;
-      const dots = this.sessionDots.get(sessionIndex);
-      if (!dots) continue;
-      const geometry = dots.geometry as THREE.BufferGeometry;
-      const drawRange = geometry.drawRange;
-      drawRange.start = 0;
-      drawRange.count = i < clamped ? i + 1 : 0;
-      const arc = this.sessionArcs.get(sessionIndex);
+      sessionPointCounts.set(sessionIndex, (sessionPointCounts.get(sessionIndex) ?? 0) + 1);
+    }
+
+    const sessionTotal = this.project?.sessions.length ?? 0;
+    for (let s = 0; s < sessionTotal; s += 1) {
+      const count = sessionPointCounts.get(s) ?? 0;
+      const dots = this.sessionDots.get(s);
+      if (dots) {
+        (dots.geometry as THREE.BufferGeometry).setDrawRange(0, count);
+      }
+      const arc = this.sessionArcs.get(s);
       if (arc) {
-        const arcRange = (arc.geometry as THREE.BufferGeometry).drawRange;
-        arcRange.start = 0;
-        arcRange.count = i < clamped ? i + 1 : 0;
+        (arc.geometry as THREE.BufferGeometry).setDrawRange(0, count);
       }
     }
 
@@ -452,4 +490,74 @@ function filteredToFloat32(positions: Array<Vec3 | null>): Float32Array {
     out[i * 3 + 2] = p.z;
   }
   return out;
+}
+
+function createDotTexture(): THREE.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const center = size / 2;
+    const grad = ctx.createRadialGradient(center, center, 0, center, center, center * 0.95);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.95)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(center, center, center * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}
+
+function createRingTexture(): THREE.CanvasTexture {
+  const size = 96;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const center = size / 2;
+    // Outer reticle ring
+    ctx.beginPath();
+    ctx.arc(center, center, center * 0.72, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Subtle inner glowing dot
+    ctx.beginPath();
+    ctx.arc(center, center, center * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}
+
+function createCardinalSprite(label: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(130, 165, 215, 0.85)';
+    ctx.fillText(label, 32, 32);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.85,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.4, 1.4, 1.4);
+  return sprite;
 }
