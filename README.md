@@ -65,6 +65,13 @@ src/
 
 ---
 
+## Roadmap
+
+- **Universal MP4 (H.264) Export**: Add `ffmpeg.wasm` as an export option alongside WebM in the export dialog for native iOS / Instagram Reels compatibility.
+- **Stacked Result Reveal**: Optional final transition revealing the final stacked deep-sky image at the end of the celestial trajectory.
+
+---
+
 ## License
 
 MIT © Daian Gan
