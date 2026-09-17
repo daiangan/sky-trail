@@ -85,6 +85,7 @@ export class DomeView {
       canvas: this.canvas,
       antialias: true,
       alpha: false,
+      preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setClearColor(options.backgroundColor ?? 0x080a12, 1);
@@ -221,6 +222,7 @@ export class DomeView {
    *  RAF loop -- used by the video exporter between rendered frames. */
   tickPlayback(dt: number): void {
     this.playback.tick(dt);
+    this.applyAutoOrbit(dt);
     this.updateRevealedPoints(this.playback.snapshot().revealCount);
   }
 

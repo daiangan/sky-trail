@@ -131,7 +131,7 @@ store.subscribe((state) => {
     lastProject = state.project;
     domeView.setProject(state.project);
   }
-  controlsApi.setPlaybackState(state.playback);
+  controlsApi.setPlaybackState(store.get().playback);
 });
 
 controlsApi.setPlaybackState(store.get().playback);

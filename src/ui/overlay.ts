@@ -90,14 +90,14 @@ export function mountOverlay(
     }
 
     currentVisibility = state.overlay;
-    applyVisibility(state.overlay);
     const snapshot = state.playback;
     const point = lastTimeline[snapshot.revealCount - 1];
+    const hasPoint = Boolean(point);
+    applyVisibility(state.overlay, hasPoint);
 
     if (!point) {
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
-      stats.style.display = 'none';
       drawEmptyChart(ctx);
       currentSnapshot = {
         counterText: formatDuration(0),
@@ -107,7 +107,6 @@ export function mountOverlay(
       };
       return;
     }
-    stats.style.display = '';
 
     counter.textContent = formatDuration(point.cumulativeExptimeS);
     const statsLines = [
@@ -148,7 +147,8 @@ export function mountOverlay(
     setVisibility: (visibility: OverlayVisibility) => {
       currentVisibility = visibility;
       currentSnapshot = { ...currentSnapshot, visibility };
-      applyVisibility(visibility);
+      const point = lastTimeline[store.get().playback.revealCount - 1];
+      applyVisibility(visibility, Boolean(point));
     },
   };
 }
@@ -232,30 +232,52 @@ function drawStats(
   ctx.restore();
 }
 
+let offscreenChartCanvas: HTMLCanvasElement | null = null;
+let offscreenChartCtx: CanvasRenderingContext2D | null = null;
+
+function getOffscreenChart(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  if (!offscreenChartCanvas || !offscreenChartCtx) {
+    offscreenChartCanvas = document.createElement('canvas');
+    offscreenChartCanvas.width = CHART_WIDTH;
+    offscreenChartCanvas.height = CHART_HEIGHT;
+    const ctx = offscreenChartCanvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get 2D context for offscreen chart');
+    offscreenChartCtx = ctx;
+  }
+  return { canvas: offscreenChartCanvas, ctx: offscreenChartCtx };
+}
+
 function drawChartTo(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   altitudes: number[] | null,
 ): void {
-  ctx.save();
   const x = width - CHART_WIDTH - CHART_RIGHT_OFFSET;
   const y = height - CHART_HEIGHT - CHART_BOTTOM_OFFSET;
+  const { canvas: chartCanvas, ctx: chartCtx } = getOffscreenChart();
+
+  chartCtx.clearRect(0, 0, CHART_WIDTH, CHART_HEIGHT);
   if (altitudes === null || altitudes.length === 0) {
-    drawAltitudeChart(ctx, [0, 0], 0);
-    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
-    ctx.fillText('No data yet', x + CHART_WIDTH / 2, y + CHART_HEIGHT / 2);
+    drawAltitudeChart(chartCtx, [0, 0], 0);
+    chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+    chartCtx.font = '11px system-ui, sans-serif';
+    chartCtx.textBaseline = 'middle';
+    chartCtx.textAlign = 'center';
+    chartCtx.fillText('No data yet', CHART_WIDTH / 2, CHART_HEIGHT / 2);
   } else {
-    drawAltitudeChart(ctx, altitudes, altitudes.length - 1);
-    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.textBaseline = 'bottom';
-    ctx.textAlign = 'right';
-    ctx.fillText(`${ALTITUDE_CHART_HOURS}h window`, x + CHART_WIDTH - 10, y + CHART_HEIGHT - 10);
+    drawAltitudeChart(chartCtx, altitudes, altitudes.length - 1);
+    chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+    chartCtx.font = '11px system-ui, sans-serif';
+    chartCtx.textBaseline = 'bottom';
+    chartCtx.textAlign = 'right';
+    chartCtx.fillText(`${ALTITUDE_CHART_HOURS}h window`, CHART_WIDTH - 10, CHART_HEIGHT - 10);
   }
+
+  ctx.save();
+  roundRect(ctx, x, y, CHART_WIDTH, CHART_HEIGHT, 8);
+  ctx.clip();
+  ctx.drawImage(chartCanvas, x, y, CHART_WIDTH, CHART_HEIGHT);
   ctx.restore();
 }
 
@@ -280,13 +302,19 @@ function roundRect(
   ctx.closePath();
 }
 
-function applyVisibility(visibility: OverlayVisibility): void {
+function applyVisibility(visibility: OverlayVisibility, hasPoint: boolean): void {
   const counter = document.getElementById('overlay-counter');
   const stats = document.getElementById('overlay-stats');
   const chart = document.getElementById('overlay-chart-wrap');
-  if (counter) counter.style.display = visibility.visible && visibility.counter ? 'block' : 'none';
-  if (stats) stats.style.display = visibility.visible && visibility.stats ? 'block' : 'none';
-  if (chart) chart.style.display = visibility.visible && visibility.chart ? 'block' : 'none';
+  if (counter) {
+    counter.style.display = visibility.visible && visibility.counter ? 'block' : 'none';
+  }
+  if (stats) {
+    stats.style.display = visibility.visible && visibility.stats && hasPoint ? 'flex' : 'none';
+  }
+  if (chart) {
+    chart.style.display = visibility.visible && visibility.chart ? 'block' : 'none';
+  }
 }
 
 function arraysMatchTimeline(timeline: TimelinePoint[], state: AppState): boolean {

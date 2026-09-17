@@ -87,6 +87,9 @@ export class VideoExporter {
       if (!offCtx) throw new Error('Could not get 2D context for export canvas');
 
       const timelineLength = this.domeView.playbackLength();
+      if (timelineLength === 0) {
+        throw new Error('No capture points loaded. Add FITS files before exporting.');
+      }
       const pointsPerSecond = this.domeView.getPointsPerSecond();
       const revealSeconds = pointsPerSecond > 0 ? timelineLength / pointsPerSecond : 0;
       const totalSeconds = Math.max(1, revealSeconds + finalHold);
