@@ -221,9 +221,15 @@ export class DomeView {
   /** Advance the playback controller by `dt` seconds without touching the
    *  RAF loop -- used by the video exporter between rendered frames. */
   tickPlayback(dt: number): void {
-    this.playback.tick(dt);
+    this.playback.advance(dt);
     this.applyAutoOrbit(dt);
     this.updateRevealedPoints(this.playback.snapshot().revealCount);
+  }
+
+  /** Advance auto-orbit and render one frame during final hold. */
+  renderHoldFrame(dt: number): void {
+    this.applyAutoOrbit(dt);
+    this.renderOnce();
   }
 
   /** Render one frame to the WebGL canvas (no playback advance). */

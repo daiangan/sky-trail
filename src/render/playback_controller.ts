@@ -57,14 +57,21 @@ export class PlaybackController {
       this.notify();
       return;
     }
+    this.advance(dt);
+    if (this.revealCount >= this.timelineLength) {
+      this.isPlaying = false;
+      this.notify();
+    }
+  }
+
+  /** Unconditionally advance animation progress by `dt` seconds (e.g. for offline export). */
+  advance(dt: number): void {
+    if (this.pointsPerSecond <= 0 || this.timelineLength === 0) return;
+    if (this.revealCount >= this.timelineLength) return;
     this.revealProgress += dt * this.pointsPerSecond;
     const target = Math.floor(this.revealProgress);
     if (target !== this.revealCount) {
       this.revealCount = Math.min(target, this.timelineLength);
-      this.notify();
-    }
-    if (this.revealCount >= this.timelineLength) {
-      this.isPlaying = false;
       this.notify();
     }
   }

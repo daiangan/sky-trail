@@ -25,13 +25,13 @@ const CHART_WIDTH = 220;
 const CHART_HEIGHT = 120;
 const COUNTER_TOP = 16;
 const COUNTER_LEFT = 16;
-const COUNTER_HEIGHT = 64;
-const COUNTER_FONT = '700 2rem system-ui, sans-serif';
-const STATS_TOP = COUNTER_TOP + COUNTER_HEIGHT + 12;
+const COUNTER_HEIGHT = 56;
+const COUNTER_FONT = "700 24px 'Outfit', 'Inter', system-ui, sans-serif";
+const STATS_TOP = COUNTER_TOP + COUNTER_HEIGHT + 10;
 const STATS_LEFT = COUNTER_LEFT;
-const STATS_FONT = '0.75rem system-ui, sans-serif';
-const STATS_LABEL_FONT = '600 0.625rem system-ui, sans-serif';
-const STATS_LINE_GAP = 18;
+const STATS_FONT = "12px 'Inter', system-ui, monospace, sans-serif";
+const STATS_LABEL_FONT = "600 11px 'Inter', system-ui, sans-serif";
+const STATS_LINE_GAP = 20;
 const CHART_BOTTOM_OFFSET = 16;
 const CHART_RIGHT_OFFSET = 16;
 
@@ -183,9 +183,9 @@ function drawCounter(
   text: string,
 ): void {
   ctx.save();
-  const boxW = 200;
-  const boxH = 56;
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+  const boxW = 180;
+  const boxH = COUNTER_HEIGHT;
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.65)';
   roundRect(ctx, COUNTER_LEFT, COUNTER_TOP, boxW, boxH, 8);
   ctx.fill();
   ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
@@ -195,7 +195,7 @@ function drawCounter(
   ctx.font = COUNTER_FONT;
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  ctx.fillText(text, COUNTER_LEFT + 14, COUNTER_TOP + boxH / 2 + 2);
+  ctx.fillText(text, COUNTER_LEFT + 14, COUNTER_TOP + boxH / 2 + 1);
   ctx.restore();
   void width;
   void height;
@@ -207,19 +207,18 @@ function drawStats(
   _height: number,
   lines: { label: string; value: string }[],
 ): void {
+  if (lines.length === 0) return;
   ctx.save();
-  const boxW = 200;
+  const boxW = 180;
   const lineH = STATS_LINE_GAP;
-  const boxH = lineH * lines.length + 16;
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+  const boxH = lineH * lines.length + 14;
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.65)';
   roundRect(ctx, STATS_LEFT, STATS_TOP, boxW, boxH, 8);
   ctx.fill();
   ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.font = STATS_FONT;
   ctx.textBaseline = 'top';
-  ctx.fillStyle = 'rgb(220, 226, 240)';
   for (let i = 0; i < lines.length; i += 1) {
     const y = STATS_TOP + 8 + i * lineH;
     ctx.font = STATS_LABEL_FONT;
@@ -227,7 +226,7 @@ function drawStats(
     ctx.fillText(`${lines[i]!.label.toUpperCase()}:`, STATS_LEFT + 12, y);
     ctx.font = STATS_FONT;
     ctx.fillStyle = 'rgb(220, 226, 240)';
-    ctx.fillText(` ${lines[i]!.value}`, STATS_LEFT + 12 + 70, y);
+    ctx.fillText(lines[i]!.value, STATS_LEFT + 12 + 75, y);
   }
   ctx.restore();
 }
@@ -253,26 +252,18 @@ function drawChartTo(
   height: number,
   altitudes: number[] | null,
 ): void {
+  if (altitudes === null || altitudes.length === 0) return;
   const x = width - CHART_WIDTH - CHART_RIGHT_OFFSET;
   const y = height - CHART_HEIGHT - CHART_BOTTOM_OFFSET;
   const { canvas: chartCanvas, ctx: chartCtx } = getOffscreenChart();
 
   chartCtx.clearRect(0, 0, CHART_WIDTH, CHART_HEIGHT);
-  if (altitudes === null || altitudes.length === 0) {
-    drawAltitudeChart(chartCtx, [0, 0], 0);
-    chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-    chartCtx.font = '11px system-ui, sans-serif';
-    chartCtx.textBaseline = 'middle';
-    chartCtx.textAlign = 'center';
-    chartCtx.fillText('No data yet', CHART_WIDTH / 2, CHART_HEIGHT / 2);
-  } else {
-    drawAltitudeChart(chartCtx, altitudes, altitudes.length - 1);
-    chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-    chartCtx.font = '11px system-ui, sans-serif';
-    chartCtx.textBaseline = 'bottom';
-    chartCtx.textAlign = 'right';
-    chartCtx.fillText(`${ALTITUDE_CHART_HOURS}h window`, CHART_WIDTH - 10, CHART_HEIGHT - 10);
-  }
+  drawAltitudeChart(chartCtx, altitudes, altitudes.length - 1);
+  chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
+  chartCtx.font = "11px 'Inter', system-ui, sans-serif";
+  chartCtx.textBaseline = 'bottom';
+  chartCtx.textAlign = 'right';
+  chartCtx.fillText(`${ALTITUDE_CHART_HOURS}h window`, CHART_WIDTH - 10, CHART_HEIGHT - 10);
 
   ctx.save();
   roundRect(ctx, x, y, CHART_WIDTH, CHART_HEIGHT, 8);
