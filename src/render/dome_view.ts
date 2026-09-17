@@ -33,6 +33,8 @@ export interface DomeViewOptions {
   defaultPointSize?: number;
   defaultCameraRotationDegPerSec?: number;
   defaultPointsPerSecond?: number;
+  defaultSurfaceOpacity?: number;
+  defaultFloorOpacity?: number;
   onPlaybackChange?: (snapshot: PlaybackSnapshot) => void;
 }
 
@@ -51,6 +53,10 @@ export class DomeView {
   private readonly domeGroup: THREE.Group;
   private readonly wireframe: THREE.LineSegments;
   private readonly wireframeMaterial: THREE.LineBasicMaterial;
+  private readonly surfaceMesh: THREE.Mesh;
+  private readonly surfaceMaterial: THREE.MeshBasicMaterial;
+  private readonly floorMesh: THREE.Mesh;
+  private readonly floorMaterial: THREE.MeshBasicMaterial;
   private readonly sessionArcs = new Map<number, THREE.LineSegments>();
   private readonly sessionDots = new Map<number, THREE.Points>();
   private readonly currentMarker: THREE.Points;
@@ -132,6 +138,43 @@ export class DomeView {
     this.wireframe = new THREE.LineSegments(wireframeGeometry, this.wireframeMaterial);
     this.domeGroup.add(this.wireframe);
 
+    // Dome surface hemisphere
+    const surfaceGeometry = new THREE.SphereGeometry(
+      this.radius * 0.998,
+      64,
+      32,
+      0,
+      Math.PI * 2,
+      0,
+      Math.PI / 2,
+    );
+    surfaceGeometry.rotateX(Math.PI / 2);
+    const initialSurfaceOpacity = options.defaultSurfaceOpacity ?? 0;
+    this.surfaceMaterial = new THREE.MeshBasicMaterial({
+      color: 0x162842,
+      transparent: true,
+      opacity: initialSurfaceOpacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.surfaceMesh = new THREE.Mesh(surfaceGeometry, this.surfaceMaterial);
+    this.surfaceMesh.visible = initialSurfaceOpacity > 0.001;
+    this.domeGroup.add(this.surfaceMesh);
+
+    // Dome floor circle (horizon ground plane)
+    const floorGeometry = new THREE.CircleGeometry(this.radius * 0.998, 64);
+    const initialFloorOpacity = options.defaultFloorOpacity ?? 0;
+    this.floorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x0a1322,
+      transparent: true,
+      opacity: initialFloorOpacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.floorMesh = new THREE.Mesh(floorGeometry, this.floorMaterial);
+    this.floorMesh.visible = initialFloorOpacity > 0.001;
+    this.domeGroup.add(this.floorMesh);
+
     this.dotTexture = createDotTexture();
     this.ringTexture = createRingTexture();
 
@@ -188,6 +231,26 @@ export class DomeView {
       const material = dots.material as THREE.PointsMaterial;
       material.size = this.pointSize;
     }
+  }
+
+  setSurfaceOpacity(opacity: number): void {
+    const clamped = Math.max(0, Math.min(1, opacity));
+    this.surfaceMaterial.opacity = clamped;
+    this.surfaceMesh.visible = clamped > 0.001;
+  }
+
+  getSurfaceOpacity(): number {
+    return this.surfaceMaterial.opacity;
+  }
+
+  setFloorOpacity(opacity: number): void {
+    const clamped = Math.max(0, Math.min(1, opacity));
+    this.floorMaterial.opacity = clamped;
+    this.floorMesh.visible = clamped > 0.001;
+  }
+
+  getFloorOpacity(): number {
+    return this.floorMaterial.opacity;
   }
 
   play(): void {
@@ -274,6 +337,10 @@ export class DomeView {
     this.currentMarkerMaterial.dispose();
     this.wireframe.geometry.dispose();
     this.currentMarker.geometry.dispose();
+    this.surfaceMesh.geometry.dispose();
+    this.surfaceMaterial.dispose();
+    this.floorMesh.geometry.dispose();
+    this.floorMaterial.dispose();
     this.dotTexture.dispose();
     this.ringTexture.dispose();
     for (const sprite of this.cardinalSprites) {

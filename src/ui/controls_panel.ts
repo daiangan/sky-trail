@@ -21,6 +21,8 @@ export interface ControlsPanelHandlers {
   onPointsPerSecondChange: (value: number) => void;
   onCameraSpeedChange: (value: number) => void;
   onPointSizeChange: (value: number) => void;
+  onSurfaceOpacityChange?: (value: number) => void;
+  onFloorOpacityChange?: (value: number) => void;
   onPlayPause: () => void;
   onReset: () => void;
   onCoordinates: () => void;
@@ -87,6 +89,28 @@ export function mountControlsPanel(
     onInput: (value) => handlers.onPointSizeChange(value),
   });
 
+  const surfaceOpacity = slider({
+    id: 'surface-opacity',
+    label: 'Dome surface',
+    min: 0,
+    max: 100,
+    step: 1,
+    initialValue: 0,
+    unit: '%',
+    onInput: (value) => handlers.onSurfaceOpacityChange?.(value / 100),
+  });
+
+  const floorOpacity = slider({
+    id: 'floor-opacity',
+    label: 'Dome floor',
+    min: 0,
+    max: 100,
+    step: 1,
+    initialValue: 0,
+    unit: '%',
+    onInput: (value) => handlers.onFloorOpacityChange?.(value / 100),
+  });
+
   // --- overlay toggles --------------------------------------------------
 
   const overlayToggle = overlayToggles(store.get().overlay, (visibility) => {
@@ -118,6 +142,11 @@ export function mountControlsPanel(
       arcSpeed.root,
       cameraSpeed.root,
       pointSize.root,
+    ]),
+    el('section', { class: 'controls__section' }, [
+      el('h2', { class: 'controls__title' }, ['Dome']),
+      surfaceOpacity.root,
+      floorOpacity.root,
     ]),
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Overlay']),
