@@ -36,7 +36,7 @@ export interface DomeViewOptions {
   onPlaybackChange?: (snapshot: PlaybackSnapshot) => void;
 }
 
-const DEFAULT_INITIAL_ELEVATION_DEG = 25;
+const DEFAULT_INITIAL_ELEVATION_DEG = 0;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
 const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 0;
 
