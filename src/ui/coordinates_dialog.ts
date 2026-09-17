@@ -148,11 +148,19 @@ export function mountCoordinatesDialog(
 
   const api: CoordinatesDialogApi = {
     open: () => {
+      const rem = loadFallbackCoords();
+      const proj = store.get().project;
+      raInput.value = formatField(proj.fallbackObjRaDeg, rem.raDeg);
+      decInput.value = formatField(proj.fallbackObjDecDeg, rem.decDeg);
+      latInput.value = formatField(proj.fallbackSiteLatDeg, rem.latDeg);
+      lonInput.value = formatField(proj.fallbackSiteLonDeg, rem.lonDeg);
+      error.textContent = '';
       root.classList.add('dialog-root--open');
       raInput.focus();
     },
     close: () => {
       root.classList.remove('dialog-root--open');
+      error.textContent = '';
     },
   };
 
