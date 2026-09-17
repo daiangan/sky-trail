@@ -138,6 +138,7 @@ export function mountControlsPanel(
       playBtn.textContent = snapshot.isPlaying ? '❚❚ Pause' : '▶ Play';
       playBtn.disabled = snapshot.timelineLength === 0;
       resetBtn.disabled = snapshot.revealCount === 0;
+      exportBtn.disabled = snapshot.timelineLength === 0;
     },
   };
 }
@@ -230,26 +231,33 @@ function overlayToggles(
     });
   };
 
+  const updateDisabledState = (masterVisible: boolean) => {
+    counterCheckbox.disabled = !masterVisible;
+    statsCheckbox.disabled = !masterVisible;
+    chartCheckbox.disabled = !masterVisible;
+    subGroup.classList.toggle('toggles__subgroup--dimmed', !masterVisible);
+  };
+
   masterCheckbox.addEventListener('change', () => {
-    const allOn = masterCheckbox.checked;
-    counterCheckbox.checked = allOn;
-    statsCheckbox.checked = allOn;
-    chartCheckbox.checked = allOn;
+    updateDisabledState(masterCheckbox.checked);
     emit();
   });
-  for (const cb of [counterCheckbox, statsCheckbox, chartCheckbox]) {
-    cb.addEventListener('change', () => {
-      masterCheckbox.checked =
-        counterCheckbox.checked && statsCheckbox.checked && chartCheckbox.checked;
-      emit();
-    });
-  }
 
-  const root = el('div', { class: 'toggles' }, [
-    toggleRow(masterCheckbox, 'Show overlay'),
+  counterCheckbox.addEventListener('change', emit);
+  statsCheckbox.addEventListener('change', emit);
+  chartCheckbox.addEventListener('change', emit);
+
+  const subGroup = el('div', { class: 'toggles__subgroup' }, [
     toggleRow(counterCheckbox, 'Exposure counter'),
     toggleRow(statsCheckbox, 'Stats panel'),
     toggleRow(chartCheckbox, 'Altitude chart'),
+  ]);
+
+  updateDisabledState(initial.visible);
+
+  const root = el('div', { class: 'toggles' }, [
+    toggleRow(masterCheckbox, 'Show overlay', true),
+    subGroup,
   ]);
 
   return {
@@ -259,12 +267,13 @@ function overlayToggles(
       counterCheckbox.checked = visibility.counter;
       statsCheckbox.checked = visibility.stats;
       chartCheckbox.checked = visibility.chart;
+      updateDisabledState(visibility.visible);
     },
   };
 }
 
-function toggleRow(checkbox: HTMLInputElement, label: string): HTMLElement {
-  return el('label', { class: 'toggle' }, [
+function toggleRow(checkbox: HTMLInputElement, label: string, isMaster = false): HTMLElement {
+  return el('label', { class: `toggle${isMaster ? ' toggle--master' : ''}` }, [
     checkbox,
     el('span', { class: 'toggle__label' }, [label]),
   ]);

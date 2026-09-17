@@ -87,6 +87,9 @@ export class VideoExporter {
       if (!offCtx) throw new Error('Could not get 2D context for export canvas');
 
       const timelineLength = this.domeView.playbackLength();
+      if (timelineLength === 0) {
+        throw new Error('No capture points loaded. Add FITS files before exporting.');
+      }
       const pointsPerSecond = this.domeView.getPointsPerSecond();
       const revealSeconds = pointsPerSecond > 0 ? timelineLength / pointsPerSecond : 0;
       const totalSeconds = Math.max(1, revealSeconds + finalHold);
@@ -131,6 +134,8 @@ export class VideoExporter {
 
       const dt = 1 / fps;
       const domCanvas = this.domeView.getCanvas();
+      const clientWidth = domCanvas.clientWidth || width;
+      const scale = Math.max(1, width / clientWidth);
 
       for (let frame = 0; frame < revealFrames; frame += 1) {
         if (this.cancelled) break;
@@ -140,7 +145,10 @@ export class VideoExporter {
         offCtx.fillStyle = 'rgb(8, 10, 18)';
         offCtx.fillRect(0, 0, width, height);
         offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
-        renderOverlayTo(offCtx, width, height, this.getOverlaySnapshot());
+        offCtx.save();
+        offCtx.scale(scale, scale);
+        renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
+        offCtx.restore();
 
         options.onProgress?.({
           phase: 'rendering',
@@ -155,10 +163,15 @@ export class VideoExporter {
 
       for (let frame = 0; frame < holdFrames; frame += 1) {
         if (this.cancelled) break;
+        this.domeView.renderHoldFrame(dt);
+
         offCtx.fillStyle = 'rgb(8, 10, 18)';
         offCtx.fillRect(0, 0, width, height);
         offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
-        renderOverlayTo(offCtx, width, height, this.getOverlaySnapshot());
+        offCtx.save();
+        offCtx.scale(scale, scale);
+        renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
+        offCtx.restore();
 
         options.onProgress?.({
           phase: 'final-hold',

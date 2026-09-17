@@ -67,6 +67,7 @@ describe('drawAltitudeChart', () => {
       scale: () => undefined,
       fillText: () => undefined,
       clearRect: () => undefined,
+      setLineDash: () => undefined,
       canvas: { width: 220, height: 120 },
       fillStyle: '',
       strokeStyle: '',

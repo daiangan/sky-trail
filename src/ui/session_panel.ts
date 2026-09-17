@@ -324,8 +324,8 @@ function renderActions(host: HTMLElement, state: AppState, store: Store<AppState
   clear(host);
   if (state.project.sessions.length === 0) return;
 
-  const selectedIndex = state.selectedSessionId;
-  const disabled = selectedIndex === null || state.loading !== null;
+  const selectedIndex = state.selectedSessionId ?? 0;
+  const disabled = state.loading !== null;
 
   const addFiles = el(
     'button',
@@ -355,11 +355,9 @@ function renderActions(host: HTMLElement, state: AppState, store: Store<AppState
     void runPick(pickDirectory, store);
   });
 
-  if (selectedIndex !== null) {
-    const session = state.project.sessions[selectedIndex];
-    if (session) {
-      host.appendChild(el('p', { class: 'session-actions__hint' }, [`Selected: ${session.name}`]));
-    }
+  const session = state.project.sessions[selectedIndex];
+  if (session) {
+    host.appendChild(el('p', { class: 'session-actions__hint' }, [`Selected: ${session.name}`]));
   }
 
   host.append(addFiles, addFolder);
@@ -382,8 +380,17 @@ async function runPick(
   });
 
   store.set((s) => {
-    if (s.selectedSessionId === null) return s;
-    const session = s.project.sessions[s.selectedSessionId];
+    let project = s.project;
+    let targetIndex = s.selectedSessionId;
+    if (project.sessions.length === 0) {
+      const session = createSession(0, 'Night 1');
+      project = addSession(project, session);
+      targetIndex = 0;
+    } else if (targetIndex === null) {
+      targetIndex = 0;
+    }
+
+    const session = project.sessions[targetIndex];
     if (!session) return s;
     let next = session;
     for (let i = 0; i < files.length; i += 1) {
@@ -391,13 +398,14 @@ async function runPick(
     }
     return {
       ...s,
-      project: replaceSession(s.project, s.selectedSessionId, () => next),
+      project: replaceSession(project, targetIndex, () => next),
+      selectedSessionId: targetIndex,
       loading: null,
     };
   });
 }
 
-function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {
+export function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {
   return {
     path: name,
     dateObs: info.dateObs,

@@ -11,6 +11,8 @@ import { mountExportDialog } from './ui/export_dialog';
 import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
 import { Store } from './ui/store';
+import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
+import { pickDirectory, pickFiles } from './ui/file_io';
 
 const root = document.querySelector<HTMLDivElement>('#app');
 if (!root) {
@@ -88,6 +90,23 @@ const domeView = new DomeView({
 mountSessionPanel(sessionPanel, store);
 const overlay = mountOverlay(overlayLayer, store);
 
+setupDragAndDrop({
+  canvasArea,
+  store,
+  onPickFolder: async () => {
+    const res = await pickDirectory();
+    if (res && res.files.length > 0) {
+      await ingestFiles(res.files, store);
+    }
+  },
+  onPickFiles: async () => {
+    const res = await pickFiles();
+    if (res && res.files.length > 0) {
+      await ingestFiles(res.files, store);
+    }
+  },
+});
+
 const coordinatesDialog = mountCoordinatesDialog(dialogRoot, store);
 const exportDialog = mountExportDialog(dialogRoot);
 const videoExporter = new VideoExporter(domeView, overlay.getSnapshot);
@@ -112,7 +131,7 @@ store.subscribe((state) => {
     lastProject = state.project;
     domeView.setProject(state.project);
   }
-  controlsApi.setPlaybackState(state.playback);
+  controlsApi.setPlaybackState(store.get().playback);
 });
 
 controlsApi.setPlaybackState(store.get().playback);

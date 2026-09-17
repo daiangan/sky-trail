@@ -74,19 +74,43 @@ export function drawAltitudeChart(
   const innerH = height - padding * 2;
   const midY = padding + innerH / 2;
 
+  // Map altDeg -> y: alt=-90 -> bottom (padding+innerH); alt=+90 -> top (padding)
+  const altToY = (alt: number) => padding + ((90 - alt) / 180) * innerH;
+
+  // Grid lines: 60 deg, 30 deg, and horizon (0 deg)
+  const gridColor = 'rgba(120, 132, 158, 0.22)';
+  const gridAltitudes = [60, 30];
+  ctx.save();
+  ctx.font = '9px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = 'rgba(150, 158, 178, 0.55)';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  for (const gAlt of gridAltitudes) {
+    const gy = altToY(gAlt);
+    ctx.strokeStyle = gridColor;
+    if (typeof ctx.setLineDash === 'function') {
+      ctx.setLineDash([2, 4]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(padding, gy);
+    ctx.lineTo(padding + innerW, gy);
+    ctx.stroke();
+    ctx.fillText(`${gAlt}°`, padding + 2, gy - 6);
+  }
+  ctx.restore();
+
   // Horizon (alt = 0) line
   ctx.strokeStyle = horizonColor;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(padding, midY);
   ctx.lineTo(padding + innerW, midY);
   ctx.stroke();
 
-  // Map altDeg -> y: alt=-90 -> bottom (padding+innerH); alt=+90 -> top (padding)
-  const altToY = (alt: number) => padding + ((90 - alt) / 180) * innerH;
-
   if (altitudes.length > 1) {
     ctx.strokeStyle = curveColor;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     for (let i = 0; i < altitudes.length; i += 1) {
       const x = padding + (i / (altitudes.length - 1)) * innerW;

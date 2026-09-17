@@ -128,4 +128,14 @@ describe('PlaybackController', () => {
     pc.togglePlay();
     expect(pc.snapshot().isPlaying).toBe(false);
   });
+
+  it('advance unconditionally advances reveal progress even when paused', () => {
+    const pc = new PlaybackController();
+    pc.setTimelineLength(20);
+    pc.setPointsPerSecond(5);
+    expect(pc.snapshot().isPlaying).toBe(false);
+    pc.advance(1.0);
+    expect(pc.snapshot().revealCount).toBe(5);
+    expect(pc.snapshot().isPlaying).toBe(false);
+  });
 });

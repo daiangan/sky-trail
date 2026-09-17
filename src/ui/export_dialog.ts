@@ -83,11 +83,18 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
   const backdrop = el('div', { class: 'dialog__backdrop' }, [dialog]);
   backdrop.addEventListener('click', (event) => {
     if (event.target === backdrop) {
-      if (currentResult) close();
+      if (currentResult || cancelBtn.style.display === 'none') close();
       else currentHandle?.cancel();
     }
   });
   root.appendChild(backdrop);
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && root.classList.contains('dialog-root--open')) {
+      if (currentResult || cancelBtn.style.display === 'none') close();
+      else currentHandle?.cancel();
+    }
+  });
 
   function applyProgress(progress: VideoExportProgress): void {
     const ratio = progress.totalFrames > 0 ? progress.frame / progress.totalFrames : 0;
