@@ -36,7 +36,7 @@ export interface DomeViewOptions {
   onPlaybackChange?: (snapshot: PlaybackSnapshot) => void;
 }
 
-const DEFAULT_INITIAL_ELEVATION_DEG = 0;
+const DEFAULT_INITIAL_ELEVATION_DEG = 25;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
 const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 0;
 
@@ -87,34 +87,21 @@ export class DomeView {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(options.backgroundColor ?? 0x080a12);
 
-    const overrideCamera = options.initialCamera !== undefined;
     const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
     const initialElevationDeg =
       options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG;
     const initialAzimuthDeg =
       options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG;
 
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
+
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-
-    if (overrideCamera) {
-      this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
-      this.controls.target.set(0, 0, 0);
-      this.controls.minDistance = this.radius * 1.2;
-      this.controls.maxDistance = this.radius * 12;
-    } else {
-      // Inside the dome at the origin, looking straight up at the zenith --
-      // the "celestial vault" view that matches the @m102_astro reference.
-      // OrbitControls' target is the zenith so manual dragging sweeps the
-      // view around the sky rather than around the observer's feet.
-      this.camera.position.set(0, 0, 0);
-      this.controls.target.set(0, 0, this.radius);
-      this.controls.minDistance = this.radius * 0.05;
-      this.controls.maxDistance = this.radius * 1.2;
-    }
-    this.camera.lookAt(this.controls.target);
+    this.controls.minDistance = this.radius * 1.2;
+    this.controls.maxDistance = this.radius * 12;
+    this.controls.target.set(0, 0, 0);
     this.controls.update();
 
     const wireframe = buildDomeWireframe(this.radius);
@@ -123,7 +110,6 @@ export class DomeView {
       transparent: true,
       opacity: 0.35,
       linewidth: 1,
-      side: THREE.DoubleSide,
     });
     const wireframeGeometry = new THREE.BufferGeometry();
     wireframeGeometry.setAttribute('position', new THREE.BufferAttribute(wireframe.positions, 3));
