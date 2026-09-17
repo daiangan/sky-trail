@@ -6,6 +6,7 @@
 <a href="https://www.typescriptlang.org/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Built%20with-TypeScript-3178C6.svg" alt="Built with TypeScript"></a>
 <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/3D%20Engine-Three.js-black.svg" alt="3D Engine: Three.js"></a>
 <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Bundler-Vite-646CFF.svg" alt="Build Tool: Vite"></a>
+<a href="https://www.paypal.com/donate/?hosted_button_id=4VC6DD8AH6TRA" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Donate-PayPal-00457C.svg?logo=paypal&logoColor=white" alt="Donate via PayPal"></a>
 
 🌌 **Live Web App**: <a href="https://daiangan.github.io/sky-trail/" target="_blank" rel="noopener noreferrer">https://daiangan.github.io/sky-trail/</a>
 
