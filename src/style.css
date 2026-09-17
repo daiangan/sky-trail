@@ -626,6 +626,46 @@ body {
   gap: 0.625rem;
 }
 
+.dialog__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.dialog__section-header:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.dialog__section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--fg-faint);
+  font-weight: 600;
+}
+
+.btn--small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+
+.btn--location {
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.08);
+  border-color: rgba(79, 195, 247, 0.25);
+}
+
+.btn--location:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.16);
+  border-color: var(--accent);
+}
+
 .dialog__row {
   display: flex;
   flex-direction: column;

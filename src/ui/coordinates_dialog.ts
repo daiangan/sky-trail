@@ -67,6 +67,58 @@ export function mountCoordinatesDialog(
   const error = el('p', { class: 'dialog__error', id: 'coords-error' });
   error.textContent = '';
 
+  const locationBtn = el(
+    'button',
+    {
+      class: 'btn btn--small btn--location',
+      type: 'button',
+      id: 'coords-location-btn',
+    },
+    ['📍 Use device location'],
+  ) as HTMLButtonElement;
+
+  const resetLocationBtn = () => {
+    locationBtn.disabled = !('geolocation' in navigator);
+    locationBtn.textContent = '📍 Use device location';
+  };
+
+  if (!('geolocation' in navigator)) {
+    locationBtn.disabled = true;
+    locationBtn.title = 'Geolocation is not supported by this browser';
+  } else {
+    locationBtn.addEventListener('click', () => {
+      locationBtn.disabled = true;
+      locationBtn.textContent = '⏳ Detecting…';
+      error.textContent = '';
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          latInput.value = pos.coords.latitude.toFixed(6);
+          lonInput.value = pos.coords.longitude.toFixed(6);
+          locationBtn.disabled = false;
+          locationBtn.textContent = '✓ Location set';
+          setTimeout(() => {
+            locationBtn.textContent = '📍 Use device location';
+          }, 2500);
+        },
+        (err) => {
+          locationBtn.disabled = false;
+          locationBtn.textContent = '📍 Use device location';
+          if (err.code === err.PERMISSION_DENIED) {
+            error.textContent = 'Location permission was denied in browser settings.';
+          } else if (err.code === err.POSITION_UNAVAILABLE) {
+            error.textContent = 'Device location is currently unavailable.';
+          } else if (err.code === err.TIMEOUT) {
+            error.textContent = 'Location request timed out. Please try again.';
+          } else {
+            error.textContent = `Could not detect location: ${err.message || 'unknown error'}`;
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      );
+    });
+  }
+
   const cancelBtn = el('button', { class: 'btn', type: 'button', id: 'coords-cancel' }, ['Cancel']);
   const saveBtn = el('button', { class: 'btn btn--primary', type: 'button', id: 'coords-save' }, [
     'Save',
@@ -109,9 +161,20 @@ export function mountCoordinatesDialog(
     api.close();
   });
 
+  const objectSectionHeader = el('div', { class: 'dialog__section-header' }, [
+    el('span', { class: 'dialog__section-title' }, ['Object Target (RA / Dec)']),
+  ]);
+
+  const siteSectionHeader = el('div', { class: 'dialog__section-header' }, [
+    el('span', { class: 'dialog__section-title' }, ['Site Location (Lat / Lon)']),
+    locationBtn,
+  ]);
+
   const form = el('form', { class: 'dialog__form' }, [
+    objectSectionHeader,
     fieldRow('Object RA', raInput),
     fieldRow('Object Dec', decInput),
+    siteSectionHeader,
     fieldRow('Site Latitude (°)', latInput),
     fieldRow('Site Longitude (°)', lonInput),
     error,
@@ -148,11 +211,21 @@ export function mountCoordinatesDialog(
 
   const api: CoordinatesDialogApi = {
     open: () => {
+      const rem = loadFallbackCoords();
+      const proj = store.get().project;
+      raInput.value = formatField(proj.fallbackObjRaDeg, rem.raDeg);
+      decInput.value = formatField(proj.fallbackObjDecDeg, rem.decDeg);
+      latInput.value = formatField(proj.fallbackSiteLatDeg, rem.latDeg);
+      lonInput.value = formatField(proj.fallbackSiteLonDeg, rem.lonDeg);
+      error.textContent = '';
+      resetLocationBtn();
       root.classList.add('dialog-root--open');
       raInput.focus();
     },
     close: () => {
       root.classList.remove('dialog-root--open');
+      error.textContent = '';
+      resetLocationBtn();
     },
   };
 

@@ -71,11 +71,19 @@ canvasArea.append(canvas, overlayLayer);
 const controlsArea = document.createElement('aside');
 controlsArea.className = 'app-layout__panel app-layout__panel--right';
 
-const dialogRoot = document.createElement('div');
-dialogRoot.className = 'dialog-layer';
+const dialogLayer = document.createElement('div');
+dialogLayer.className = 'dialog-layer';
+
+const coordinatesDialogRoot = document.createElement('div');
+coordinatesDialogRoot.className = 'dialog-root';
+
+const exportDialogRoot = document.createElement('div');
+exportDialogRoot.className = 'dialog-root';
+
+dialogLayer.append(coordinatesDialogRoot, exportDialogRoot);
 
 layout.append(sessionPanel, canvasArea, controlsArea);
-root.append(layout, dialogRoot);
+root.append(layout, dialogLayer);
 
 const domeView = new DomeView({
   canvas,
@@ -107,8 +115,8 @@ setupDragAndDrop({
   },
 });
 
-const coordinatesDialog = mountCoordinatesDialog(dialogRoot, store);
-const exportDialog = mountExportDialog(dialogRoot);
+const coordinatesDialog = mountCoordinatesDialog(coordinatesDialogRoot, store);
+const exportDialog = mountExportDialog(exportDialogRoot);
 const videoExporter = new VideoExporter(domeView, overlay.getSnapshot);
 
 const controlsApi = mountControlsPanel(controlsArea, store, {
