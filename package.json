@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "author": "Daian Gan",
+  "license": "MIT",
   "description": "Web client for visualizing astrophotography capture progress as a 3D sky dome.",
   "scripts": {
     "dev": "vite",

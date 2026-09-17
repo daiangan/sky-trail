@@ -2,12 +2,12 @@
 
 > **Turn your astrophotography capture sessions into stunning 3D celestial animations — right in your browser.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Built with TypeScript](https://img.shields.io/badge/Built%20with-TypeScript-3178C6.svg)](https://www.typescriptlang.org/)
-[![3D Engine: Three.js](https://img.shields.io/badge/3D%20Engine-Three.js-black.svg)](https://threejs.org/)
-[![Build Tool: Vite](https://img.shields.io/badge/Bundler-Vite-646CFF.svg)](https://vitejs.dev/)
+<a href="LICENSE" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+<a href="https://www.typescriptlang.org/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Built%20with-TypeScript-3178C6.svg" alt="Built with TypeScript"></a>
+<a href="https://threejs.org/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/3D%20Engine-Three.js-black.svg" alt="3D Engine: Three.js"></a>
+<a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Bundler-Vite-646CFF.svg" alt="Build Tool: Vite"></a>
 
-🌌 **Live Web App**: [https://daiangan.github.io/sky-trail/](https://daiangan.github.io/sky-trail/)
+🌌 **Live Web App**: <a href="https://daiangan.github.io/sky-trail/" target="_blank" rel="noopener noreferrer">https://daiangan.github.io/sky-trail/</a>
 
 ---
 
@@ -15,7 +15,7 @@
 
 As astrophotographers, we spend entire nights — often spanning multiple weeks or months — hunting faint photons across the night sky. Every subframe is a small piece of a much larger journey as Earth rotates beneath the cosmos.
 
-I was deeply inspired by the celestial dome capture progress posts on Instagram created by [@m102_astro](https://www.instagram.com/m102_astro/), which beautifully trace deep-sky targets ascending and descending across an illuminated sky dome.
+I was deeply inspired by the celestial dome capture progress posts on Instagram created by <a href="https://www.instagram.com/m102_astro/" target="_blank" rel="noopener noreferrer">@m102_astro</a>, which beautifully trace deep-sky targets ascending and descending across an illuminated sky dome.
 
 I wanted a modern, zero-friction tool that _any_ astrophotographer could use immediately without needing to install Python, Conda environments, or complex desktop packages. I built **SkyTrail** during my free time and decided to release it as a free, open-source web application for the entire astrophotography community.
 
@@ -66,7 +66,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 
 ## 🚀 How to Use (Quick Start)
 
-1. Open [SkyTrail in your browser](https://daiangan.github.io/sky-trail/).
+1. Open <a href="https://daiangan.github.io/sky-trail/" target="_blank" rel="noopener noreferrer">SkyTrail in your browser</a>.
 2. Drag and drop your FITS light frames or folder directly onto the canvas (or click **Select Folder...**).
 3. If you have multiple nights, click **+ New session** in the left sidebar and add your next set of lights.
 4. Customize your arc speed, camera rotation, dome opacity, and session colors in the right panel.
@@ -82,10 +82,10 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 ### Core Stack
 
 - **Language**: TypeScript (strict mode, zero implicit `any`)
-- **3D Rendering**: [Three.js](https://threejs.org/) (WebGL with `preserveDrawingBuffer` support for video capture)
-- **Celestial Mechanics**: [astronomy-engine](https://github.com/cosinekitty/astronomy) (NOVAS-derived high-precision horizontal coordinate transformations)
-- **Bundler & Dev Server**: [Vite](https://vitejs.dev/)
-- **Test Suite**: [Vitest](https://vitest.dev/) (20 suites, 145 unit and integration tests)
+- **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture)
+- **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
+- **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (20 suites, 145 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 
 ### Coordinate System & Astronomical Transforms
@@ -168,12 +168,12 @@ tests/          # Comprehensive Vitest test suites (145 tests)
 
 SkyTrail is an independent passion project created in my free time and shared freely with the astronomy community. If SkyTrail has helped you showcase your astrophotography captures, consider supporting its ongoing development:
 
-> 💙 **Support & Donations**: `[Donation link coming soon]`
+> 💙 **Support & Donations**: <a href="https://www.paypal.com/donate/?hosted_button_id=4VC6DD8AH6TRA" target="_blank" rel="noopener noreferrer">**Donate via PayPal**</a>
 
 ---
 
 ## 📄 License
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+Distributed under the **MIT License**. See <a href="LICENSE" target="_blank" rel="noopener noreferrer">LICENSE</a> for more information.
 
-Developed with ❤️ by **Daian Gan** ([daian@ganmedia.com](mailto:daian@ganmedia.com)).
+Developed with ❤️ by <a href="https://daiangan.com/" target="_blank" rel="noopener noreferrer">**Daian Gan**</a>.
