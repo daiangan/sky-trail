@@ -419,12 +419,30 @@ body {
   background: var(--accent);
   border-color: var(--accent);
   color: rgb(8, 10, 18);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .btn--primary:hover:not(:disabled) {
   background: rgb(105, 205, 247);
   border-color: rgb(105, 205, 247);
+}
+
+.btn--export {
+  background: linear-gradient(135deg, rgb(79, 195, 247) 0%, rgb(40, 160, 235) 100%);
+  border-color: var(--accent);
+  color: rgb(8, 10, 18);
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(79, 195, 247, 0.25);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.btn--export:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgb(115, 215, 255) 0%, rgb(60, 180, 250) 100%);
+  border-color: rgb(115, 215, 255);
+  box-shadow: 0 0 16px rgba(79, 195, 247, 0.45);
 }
 
 .session-progress__inner {
@@ -483,6 +501,12 @@ body {
 
 .controls__row--buttons .btn {
   flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.5rem;
 }
 
 .slider {
@@ -849,4 +873,86 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* GitHub Repository Links                                             */
+/* ------------------------------------------------------------------ */
+
+.canvas-github-link {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(8, 10, 18, 0.65);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--fg-dim);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.canvas-github-link:hover {
+  background: rgba(28, 34, 50, 0.85);
+  border-color: var(--border-strong);
+  color: var(--fg);
+  transform: translateY(-1px);
+}
+
+.canvas-github-link svg {
+  color: var(--fg-dim);
+  transition: color 120ms ease;
+}
+
+.canvas-github-link:hover svg {
+  color: #fff;
+}
+
+.controls__footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.controls__footer .github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--fg-faint);
+  font-size: 0.75rem;
+  text-decoration: none;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.controls__footer .github-link:hover {
+  color: var(--fg);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.github-icon {
+  display: inline-flex;
+  align-items: center;
 }

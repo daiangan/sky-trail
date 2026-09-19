@@ -100,6 +100,36 @@ describe('resolveLightPosition', () => {
     expect(result.filterName).toBe(src.filterName);
     expect(result.sizeBytes).toBe(src.sizeBytes);
   });
+
+  it('correctly calculates Pleiades in the East when DATE-OBS lacks a trailing Z', () => {
+    // Pleiades (M45): RA ~56.85 deg, Dec ~24.12 deg
+    // Observed from Santo Domingo (lat 18.5144, lon -69.978) at 01:00 AM local (05:00 UTC)
+    const pleiadesLight: LightFrame = {
+      path: '/pleiades.fits',
+      dateObs: '2026-09-19T05:00:00.000', // Standard FITS UTC without 'Z'
+      exptime: 120,
+      filterName: 'L',
+      sizeBytes: 1_000_000,
+      objRaDeg: 56.85,
+      objDecDeg: 24.12,
+      siteLatDeg: 18.5144,
+      siteLonDeg: -69.978,
+      altDeg: null,
+      azDeg: null,
+    };
+
+    // Use default astronomy-engine AltAz calculator
+    const result = resolveLightPosition(pleiadesLight, NULL_FALLBACK);
+
+    expect(result.altDeg).not.toBeNull();
+    expect(result.azDeg).not.toBeNull();
+    // In reality at 05:00 UTC: Alt ~39.9 deg, Az ~73.6 deg (East is ~90 deg)
+    // If the local-time bug were present, Az would be ~314 deg (Northwest/West)
+    expect(result.azDeg!).toBeGreaterThan(60);
+    expect(result.azDeg!).toBeLessThan(90);
+    expect(result.altDeg!).toBeGreaterThan(30);
+    expect(result.altDeg!).toBeLessThan(50);
+  });
 });
 
 describe('projectFallback', () => {

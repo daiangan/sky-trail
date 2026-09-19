@@ -11,6 +11,7 @@
  */
 
 import { computeAltAz } from '../astro/altaz';
+import { parseFitsDate } from '../astro/date_parse';
 import { hasPosition, type LightFrame } from './light_frame';
 
 export interface FallbackCoordinates {
@@ -55,8 +56,8 @@ export function resolveLightPosition(
   if (!light.dateObs) {
     return { ...filled, altDeg: null, azDeg: null };
   }
-  const date = new Date(light.dateObs);
-  if (Number.isNaN(date.getTime())) {
+  const date = parseFitsDate(light.dateObs);
+  if (!date) {
     return { ...filled, altDeg: null, azDeg: null };
   }
 
