@@ -19,6 +19,7 @@ import type { OverlayVisibility } from './session_panel';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
 import { ALTITUDE_CHART_HOURS, computeAltitudeCurve, drawAltitudeChart } from './altitude_chart';
+import { parseFitsDate } from '../astro/date_parse';
 import { clear, el } from './dom';
 
 const CHART_WIDTH = 220;
@@ -330,8 +331,8 @@ function computeCurveForPoint(point: TimelinePoint): number[] | null {
   ) {
     return null;
   }
-  const endTime = new Date(light.dateObs);
-  if (Number.isNaN(endTime.getTime())) return null;
+  const endTime = parseFitsDate(light.dateObs);
+  if (!endTime) return null;
   return computeAltitudeCurve(
     { latitudeDeg: light.siteLatDeg, longitudeDeg: light.siteLonDeg },
     { raDeg: light.objRaDeg, decDeg: light.objDecDeg },

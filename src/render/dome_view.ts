@@ -20,6 +20,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Project } from '../model';
 import { buildTimeline, type TimelinePoint } from '../model/timeline';
 import { computeAltAz } from '../astro/altaz';
+import { parseFitsDate } from '../astro/date_parse';
 import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
 import { buildDomeWireframe } from './dome_geometry';
 import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
@@ -540,8 +541,8 @@ function resolveTimelinePositions(timeline: readonly TimelinePoint[]): Map<strin
     ) {
       continue;
     }
-    const when = new Date(light.dateObs);
-    if (Number.isNaN(when.getTime())) continue;
+    const when = parseFitsDate(light.dateObs);
+    if (!when) continue;
     const { altitudeDeg, azimuthDeg } = computeAltAz(
       when,
       {

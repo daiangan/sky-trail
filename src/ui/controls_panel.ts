@@ -41,17 +41,31 @@ export function mountControlsPanel(
   clear(root);
   root.classList.add('controls-panel');
 
-  // --- playback buttons -------------------------------------------------
+  // --- top action buttons -----------------------------------------------
 
   const playBtn = el('button', { class: 'btn btn--primary', id: 'play-btn', type: 'button' }, [
     '▶ Play',
   ]);
-  const resetBtn = el('button', { class: 'btn', id: 'reset-btn', type: 'button' }, ['↺ Reset']);
+  const exportBtn = el('button', { class: 'btn btn--export', id: 'export-btn', type: 'button' }, [
+    'Export Video…',
+  ]);
   playBtn.addEventListener('click', () => handlers.onPlayPause());
+  exportBtn.addEventListener('click', () => handlers.onExport());
+
+  const resetBtn = el('button', { class: 'btn', id: 'reset-btn', type: 'button' }, ['↺ Reset']);
+  const coordsBtn = el('button', { class: 'btn', id: 'coords-btn', type: 'button' }, [
+    'Object Coordinates…',
+  ]);
   resetBtn.addEventListener('click', () => handlers.onReset());
-  const playbackRow = el('div', { class: 'controls__row controls__row--buttons' }, [
+  coordsBtn.addEventListener('click', () => handlers.onCoordinates());
+
+  const primaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
     playBtn,
+    exportBtn,
+  ]);
+  const secondaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
     resetBtn,
+    coordsBtn,
   ]);
 
   // --- sliders ----------------------------------------------------------
@@ -117,25 +131,11 @@ export function mountControlsPanel(
     store.set((s) => ({ ...s, overlay: visibility }));
   });
 
-  // --- footer buttons ---------------------------------------------------
-
-  const coordsBtn = el('button', { class: 'btn', id: 'coords-btn', type: 'button' }, [
-    'Object / Site Coordinates…',
-  ]);
-  const exportBtn = el('button', { class: 'btn', id: 'export-btn', type: 'button' }, [
-    'Export to Video…',
-  ]);
-  coordsBtn.addEventListener('click', () => handlers.onCoordinates());
-  exportBtn.addEventListener('click', () => handlers.onExport());
-  const footerRow = el('div', { class: 'controls__row controls__row--buttons' }, [
-    coordsBtn,
-    exportBtn,
-  ]);
-
   root.append(
     el('section', { class: 'controls__section' }, [
-      el('h2', { class: 'controls__title' }, ['Playback']),
-      playbackRow,
+      el('h2', { class: 'controls__title' }, ['Playback & Actions']),
+      primaryRow,
+      secondaryRow,
     ]),
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Animation']),
@@ -152,10 +152,7 @@ export function mountControlsPanel(
       el('h2', { class: 'controls__title' }, ['Overlay']),
       overlayToggle.root,
     ]),
-    el('section', { class: 'controls__section' }, [
-      el('h2', { class: 'controls__title' }, ['Project']),
-      footerRow,
-    ]),
+    createGithubFooter(),
   );
 
   store.subscribe((state) => {
@@ -306,4 +303,25 @@ function toggleRow(checkbox: HTMLInputElement, label: string, isMaster = false):
     checkbox,
     el('span', { class: 'toggle__label' }, [label]),
   ]);
+}
+
+function createGithubFooter(): HTMLElement {
+  const footer = el('footer', { class: 'controls__footer' });
+  const a = el(
+    'a',
+    {
+      class: 'github-link',
+      href: 'https://github.com/daiangan/sky-trail',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      title: 'SkyTrail on GitHub',
+    },
+    [el('span', {}, ['GitHub Repository'])],
+  );
+  const icon = document.createElement('span');
+  icon.className = 'github-icon';
+  icon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true" style="display:inline-block;vertical-align:middle;"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>`;
+  a.prepend(icon);
+  footer.append(a);
+  return footer;
 }
