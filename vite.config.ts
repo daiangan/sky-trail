@@ -5,7 +5,7 @@ export default defineConfig({
   build: {
     // Three.js's WebGL renderer is what's left once unused code is shaken out
     // (~570 kB minified, ~140 kB gzipped) and it can't shrink further, so the
-    // limit sits just above it. The app's own code is under 70 kB.
+    // limit sits just above it. The app's own code is under 80 kB.
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {

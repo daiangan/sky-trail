@@ -1,7 +1,7 @@
 import './style.css';
 
 import { createProject, setFallbackCoords, type Project } from './model';
-import { DomeView } from './render/dome_view';
+import type { DomeView } from './render/dome_view';
 import type { PlaybackSnapshot } from './render/playback_controller';
 import { loadFallbackCoords } from './model/persistence';
 import { VideoExporter } from './export/video_exporter';
@@ -14,6 +14,7 @@ import { mountMobileLayout } from './ui/mobile_layout';
 import { mountViewToolbar } from './ui/view_toolbar';
 import { reportIngestFailure, setCoordinatesOpener } from './ui/ingest_feedback';
 import { Store } from './ui/store';
+import { showToast } from './ui/toast';
 import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
 
@@ -89,23 +90,19 @@ dialogLayer.append(coordinatesDialogRoot, exportDialogRoot);
 layout.append(sessionPanel, canvasArea, controlsArea);
 root.append(layout, dialogLayer);
 
-const domeView = new DomeView({
-  canvas,
-  defaultPointsPerSecond: 5,
-  defaultPointSize: 6,
-  onPlaybackChange: (snapshot) => {
-    store.set((s) => ({ ...s, playback: snapshot }));
-  },
-});
+// Three.js is the bulk of the download, so the 3D view loads after the panels
+// and the welcome screen are on screen (see `startDomeView` below).
+let domeView: DomeView | null = null;
+let videoExporter: VideoExporter | null = null;
+let lastProject: Project = store.get().project;
 
-mountViewToolbar(canvasArea, domeView);
 mountMobileLayout({
   layout,
   canvasArea,
   sessionsPanel: sessionPanel,
   controlsPanel: controlsArea,
   store,
-  onPlayPause: () => domeView.togglePlay(),
+  onPlayPause: () => domeView?.togglePlay(),
 });
 mountSessionPanel(sessionPanel, store);
 const overlay = mountOverlay(overlayLayer, store);
@@ -129,28 +126,24 @@ setupDragAndDrop({
 const coordinatesDialog = mountCoordinatesDialog(coordinatesDialogRoot, store);
 setCoordinatesOpener(() => coordinatesDialog.open());
 const exportDialog = mountExportDialog(exportDialogRoot);
-const videoExporter = new VideoExporter(domeView, overlay.getSnapshot);
 
 const controlsApi = mountControlsPanel(controlsArea, store, {
-  onPointsPerSecondChange: (value) => domeView.setPointsPerSecond(value),
-  onCameraSpeedChange: (value) => domeView.setCameraRotationSpeed(value),
-  onPointSizeChange: (value) => domeView.setPointSize(value),
-  onSurfaceOpacityChange: (value) => domeView.setSurfaceOpacity(value),
-  onFloorOpacityChange: (value) => domeView.setFloorOpacity(value),
-  onPlayPause: () => domeView.togglePlay(),
-  onSeek: (value) => domeView.seek(value),
-  onReset: () => domeView.reset(),
+  onPointsPerSecondChange: (value) => domeView?.setPointsPerSecond(value),
+  onCameraSpeedChange: (value) => domeView?.setCameraRotationSpeed(value),
+  onPointSizeChange: (value) => domeView?.setPointSize(value),
+  onSurfaceOpacityChange: (value) => domeView?.setSurfaceOpacity(value),
+  onFloorOpacityChange: (value) => domeView?.setFloorOpacity(value),
+  onPlayPause: () => domeView?.togglePlay(),
+  onSeek: (value) => domeView?.seek(value),
+  onReset: () => domeView?.reset(),
   onCoordinates: () => coordinatesDialog.open(),
   onExport: () => {
-    void exportDialog.open(videoExporter);
+    if (videoExporter) void exportDialog.open(videoExporter);
   },
 });
 
-domeView.setProject(store.get().project);
-
-let lastProject: Project = store.get().project;
 store.subscribe((state) => {
-  if (state.project !== lastProject) {
+  if (domeView && state.project !== lastProject) {
     lastProject = state.project;
     domeView.setProject(state.project);
   }
@@ -158,3 +151,42 @@ store.subscribe((state) => {
 });
 
 controlsApi.setPlaybackState(store.get().playback);
+
+/**
+ * Loads Three.js and starts the 3D view. Anything the user did meanwhile is
+ * carried over: the slider values become the view's initial settings, and the
+ * lights already loaded are handed to it as soon as it exists.
+ */
+async function startDomeView(): Promise<void> {
+  try {
+    const { DomeView } = await import('./render/dome_view');
+    const settings = controlsApi.getSettings();
+    const view = new DomeView({
+      canvas,
+      defaultPointsPerSecond: settings.pointsPerSecond,
+      defaultCameraRotationDegPerSec: settings.cameraRotationDegPerSec,
+      defaultPointSize: settings.pointSize,
+      defaultSurfaceOpacity: settings.surfaceOpacity,
+      defaultFloorOpacity: settings.floorOpacity,
+      onPlaybackChange: (snapshot) => {
+        store.set((s) => ({ ...s, playback: snapshot }));
+      },
+    });
+    domeView = view;
+    videoExporter = new VideoExporter(view, overlay.getSnapshot);
+    mountViewToolbar(canvasArea, view);
+    lastProject = store.get().project;
+    view.setProject(lastProject);
+    canvas.classList.add('dome-canvas--ready');
+  } catch (error) {
+    console.error('Could not start the 3D view', error);
+    showToast({
+      kind: 'error',
+      message:
+        'The 3D view could not start. Check your connection and that WebGL is enabled, then reload the page.',
+      durationMs: 0,
+    });
+  }
+}
+
+void startDomeView();

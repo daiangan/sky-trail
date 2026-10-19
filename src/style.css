@@ -96,6 +96,13 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  /* The 3D view loads after first paint; fade it in instead of popping. */
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+
+.dome-canvas--ready {
+  opacity: 1;
 }
 
 /* Narrow screens: see the "Mobile layout" section at the end of this file. */
