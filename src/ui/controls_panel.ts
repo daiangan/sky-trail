@@ -11,7 +11,11 @@
  * debounce or batch.
  */
 
-import { DEFAULT_FLOOR_OPACITY, DEFAULT_SURFACE_OPACITY } from '../render/defaults';
+import {
+  DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
+  DEFAULT_FLOOR_OPACITY,
+  DEFAULT_SURFACE_OPACITY,
+} from '../render/defaults';
 import type { PlaybackSnapshot } from '../render/playback_controller';
 import { clear, el } from './dom';
 import type { OverlayVisibility } from './session_panel';
@@ -96,7 +100,7 @@ export function mountControlsPanel(
     min: 0,
     max: 60,
     step: 1,
-    initialValue: 0,
+    initialValue: DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
     unit: ' °/sec',
     offAtZero: true,
     onInput: (value) => handlers.onCameraSpeedChange(value),

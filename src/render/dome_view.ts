@@ -28,7 +28,11 @@ import { computeAltAz } from '../astro/altaz';
 import { parseFitsDate } from '../astro/date_parse';
 import { computeDomeFraming } from './camera_framing';
 import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
-import { DEFAULT_FLOOR_OPACITY, DEFAULT_SURFACE_OPACITY } from './defaults';
+import {
+  DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
+  DEFAULT_FLOOR_OPACITY,
+  DEFAULT_SURFACE_OPACITY,
+} from './defaults';
 import { buildDomeWireframe } from './dome_geometry';
 import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
 
@@ -48,7 +52,6 @@ export interface DomeViewOptions {
 
 const DEFAULT_INITIAL_ELEVATION_DEG = 15;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
-const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 4;
 
 export type InteractionMode = 'orbit' | 'pan';
 
