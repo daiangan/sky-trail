@@ -1,146 +1,286 @@
 /**
- * "Altitude, last 16 hours" mini-chart for the bottom-right overlay.
- * 48 uniform samples between (current frame's date - 16h) and
- * (current frame's date), using the active light's resolved
- * coordinates; a white dot marks the current sample.
+ * "Target altitude" chart for the bottom-right overlay.
  *
- * `computeAltitudeCurve` is the heavy part -- the Canvas2D draw helper
- * is cheap, which is why the controller (overlay manager) caches the
- * curve and only recomputes when the active night changes (per the
- * Python project's optimization, kept for parity even though Canvas2D
- * is much cheaper than matplotlib).
+ * Shows how high the target climbs above the horizon over the whole imaging
+ * night: the full curve, a shaded band for the time actually spent imaging,
+ * and a dot that advances with the animation. The window is fixed per
+ * session (imaging span plus padding), so the curve stays put while the dot
+ * moves along it. Times are UTC, matching the FITS `DATE-OBS` convention.
+ *
+ * `drawAltitudeChart` draws in logical pixels from the origin and never
+ * reads the canvas size, so callers decide the scale (device pixel ratio for
+ * the live canvas, the export scale for video frames).
  */
 
 import { computeAltAz } from '../astro/altaz';
+import { roundRect, withAlpha } from './canvas_utils';
 
-export const ALTITUDE_CHART_SAMPLES = 48;
-export const ALTITUDE_CHART_HOURS = 16;
+export const ALTITUDE_CHART_SAMPLES = 96;
+export const ALTITUDE_CHART_MIN_HOURS = 8;
+export const ALTITUDE_CHART_PADDING_HOURS = 1.5;
+export const CHART_WIDTH = 252;
+export const CHART_HEIGHT = 140;
 
-export function computeAltitudeCurve(
+const HOUR_MS = 3600 * 1000;
+const MAX_ALTITUDE_DEG = 90;
+const TICK_STEPS_HOURS = [1, 2, 3, 4, 6, 12];
+const MAX_TICKS = 5;
+
+export interface ChartWindow {
+  startMs: number;
+  endMs: number;
+}
+
+export interface AltitudeChartData extends ChartWindow {
+  /** Altitude samples evenly spaced across the window, in degrees. */
+  altitudes: number[];
+  /** First and last imaging timestamps of the session. */
+  spanStartMs: number;
+  spanEndMs: number;
+  /** Time of the frame currently revealed, or null before playback starts. */
+  currentMs: number | null;
+  /** Session colour, used for the imaging band and the progress curve. */
+  color: string;
+  /** Session name, shown in the chart title. */
+  title: string;
+}
+
+/** Imaging span plus padding on both sides, never narrower than the minimum window. */
+export function chartWindowForSpan(spanStartMs: number, spanEndMs: number): ChartWindow {
+  const pad = ALTITUDE_CHART_PADDING_HOURS * HOUR_MS;
+  let startMs = spanStartMs - pad;
+  let endMs = spanEndMs + pad;
+  const minMs = ALTITUDE_CHART_MIN_HOURS * HOUR_MS;
+  if (endMs - startMs < minMs) {
+    const mid = (startMs + endMs) / 2;
+    startMs = mid - minMs / 2;
+    endMs = mid + minMs / 2;
+  }
+  return { startMs, endMs };
+}
+
+export function computeAltitudeSeries(
   observer: { latitudeDeg: number; longitudeDeg: number },
   target: { raDeg: number; decDeg: number },
-  endTime: Date,
-  hours: number = ALTITUDE_CHART_HOURS,
+  window: ChartWindow,
   samples: number = ALTITUDE_CHART_SAMPLES,
 ): number[] {
-  const startTime = new Date(endTime.getTime() - hours * 3600 * 1000);
-  const totalMs = endTime.getTime() - startTime.getTime();
   const altitudes: number[] = [];
   for (let i = 0; i < samples; i += 1) {
     const t = samples === 1 ? 0 : i / (samples - 1);
-    const at = new Date(startTime.getTime() + t * totalMs);
-    const result = computeAltAz(at, observer, target);
-    altitudes.push(result.altitudeDeg);
+    const at = new Date(window.startMs + t * (window.endMs - window.startMs));
+    altitudes.push(computeAltAz(at, observer, target).altitudeDeg);
   }
   return altitudes;
 }
 
+/** Linear interpolation of the series at `ms`, or null outside the window. */
+export function altitudeAt(data: AltitudeChartData, ms: number): number | null {
+  const { altitudes, startMs, endMs } = data;
+  if (altitudes.length === 0 || ms < startMs || ms > endMs) return null;
+  if (altitudes.length === 1) return altitudes[0]!;
+  const position = ((ms - startMs) / (endMs - startMs)) * (altitudes.length - 1);
+  const lower = Math.floor(position);
+  const upper = Math.min(lower + 1, altitudes.length - 1);
+  const fraction = position - lower;
+  return altitudes[lower]! * (1 - fraction) + altitudes[upper]! * fraction;
+}
+
+/** Smallest hour step that keeps the time axis to at most `MAX_TICKS` labels. */
+export function chartTickStepHours(windowHours: number): number {
+  for (const step of TICK_STEPS_HOURS) {
+    if (windowHours / step <= MAX_TICKS) return step;
+  }
+  return 24;
+}
+
+/** UTC-hour-aligned tick timestamps inside the window. */
+export function chartTicks(window: ChartWindow): number[] {
+  const stepMs = chartTickStepHours((window.endMs - window.startMs) / HOUR_MS) * HOUR_MS;
+  const ticks: number[] = [];
+  for (let t = Math.ceil(window.startMs / stepMs) * stepMs; t <= window.endMs; t += stepMs) {
+    ticks.push(t);
+  }
+  return ticks;
+}
+
 export interface AltitudeChartStyle {
   backgroundColor?: string;
-  axisColor?: string;
-  horizonColor?: string;
+  borderColor?: string;
+  textColor?: string;
+  dimTextColor?: string;
+  gridColor?: string;
   curveColor?: string;
-  currentColor?: string;
-  labelColor?: string;
-  padding?: number;
-  font?: string;
 }
+
+const PLOT = { left: 32, right: 12, top: 44, bottom: 24 };
 
 export function drawAltitudeChart(
   ctx: CanvasRenderingContext2D,
-  altitudes: readonly number[],
-  currentIndex: number,
+  width: number,
+  height: number,
+  data: AltitudeChartData | null,
   style: AltitudeChartStyle = {},
 ): void {
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  const padding = style.padding ?? 10;
-  const backgroundColor = style.backgroundColor ?? 'rgba(8, 10, 18, 0.78)';
-  const axisColor = style.axisColor ?? 'rgba(150, 158, 178, 0.35)';
-  const horizonColor = style.horizonColor ?? 'rgba(150, 158, 178, 0.55)';
-  const curveColor = style.curveColor ?? 'rgb(220, 226, 240)';
-  const currentColor = style.currentColor ?? 'rgb(255, 255, 255)';
-  const labelColor = style.labelColor ?? 'rgba(150, 158, 178, 0.85)';
-  const font = style.font ?? '11px system-ui, sans-serif';
+  if (!data) return;
+  const backgroundColor = style.backgroundColor ?? 'rgba(8, 10, 18, 0.62)';
+  const borderColor = style.borderColor ?? 'rgba(120, 132, 158, 0.35)';
+  const textColor = style.textColor ?? 'rgb(226, 231, 244)';
+  const dimTextColor = style.dimTextColor ?? 'rgba(170, 178, 198, 0.9)';
+  const gridColor = style.gridColor ?? 'rgba(120, 132, 158, 0.28)';
+  const curveColor = style.curveColor ?? 'rgba(200, 210, 232, 0.5)';
+
+  const plotW = width - PLOT.left - PLOT.right;
+  const plotH = height - PLOT.top - PLOT.bottom;
+  const plotBottom = PLOT.top + plotH;
+  const spanMs = data.endMs - data.startMs;
+  const xOf = (ms: number) => PLOT.left + ((ms - data.startMs) / spanMs) * plotW;
+  const yOf = (alt: number) => PLOT.top + (1 - Math.max(0, alt) / MAX_ALTITUDE_DEG) * plotH;
+  const sampleMs = (i: number) =>
+    data.startMs + (data.altitudes.length === 1 ? 0 : i / (data.altitudes.length - 1)) * spanMs;
 
   ctx.save();
+
   ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = axisColor;
+  roundRect(ctx, 0.5, 0.5, width - 1, height - 1, 8);
+  ctx.fill();
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
-
-  const innerW = width - padding * 2;
-  const innerH = height - padding * 2;
-  const midY = padding + innerH / 2;
-
-  // Map altDeg -> y: alt=-90 -> bottom (padding+innerH); alt=+90 -> top (padding)
-  const altToY = (alt: number) => padding + ((90 - alt) / 180) * innerH;
-
-  // Grid lines: 60 deg, 30 deg, and horizon (0 deg)
-  const gridColor = 'rgba(120, 132, 158, 0.22)';
-  const gridAltitudes = [60, 30];
-  ctx.save();
-  ctx.font = '9px system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = 'rgba(150, 158, 178, 0.55)';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-
-  for (const gAlt of gridAltitudes) {
-    const gy = altToY(gAlt);
-    ctx.strokeStyle = gridColor;
-    if (typeof ctx.setLineDash === 'function') {
-      ctx.setLineDash([2, 4]);
-    }
-    ctx.beginPath();
-    ctx.moveTo(padding, gy);
-    ctx.lineTo(padding + innerW, gy);
-    ctx.stroke();
-    ctx.fillText(`${gAlt}°`, padding + 2, gy - 6);
-  }
-  ctx.restore();
-
-  // Horizon (alt = 0) line
-  ctx.strokeStyle = horizonColor;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padding, midY);
-  ctx.lineTo(padding + innerW, midY);
   ctx.stroke();
 
-  if (altitudes.length > 1) {
-    ctx.strokeStyle = curveColor;
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    for (let i = 0; i < altitudes.length; i += 1) {
-      const x = padding + (i / (altitudes.length - 1)) * innerW;
-      const y = altToY(altitudes[i]!);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-
-  // Current position marker
-  const curIdx = Math.max(0, Math.min(currentIndex, altitudes.length - 1));
-  if (altitudes[curIdx] !== undefined) {
-    const x =
-      padding + (altitudes.length > 1 ? (curIdx / (altitudes.length - 1)) * innerW : innerW / 2);
-    const y = altToY(altitudes[curIdx]!);
-    ctx.fillStyle = currentColor;
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.fillStyle = labelColor;
-  ctx.font = font;
+  // Header: title on the left, current altitude on the right.
   ctx.textBaseline = 'top';
-  ctx.fillText('Altitude (16h)', padding, padding);
-  ctx.textBaseline = 'bottom';
-  ctx.textAlign = 'right';
-  ctx.fillText(`${altitudes[curIdx]?.toFixed(0) ?? '—'}°`, width - padding, height - padding);
   ctx.textAlign = 'left';
+  ctx.fillStyle = dimTextColor;
+  ctx.font = "600 10px 'Inter', system-ui, sans-serif";
+  ctx.fillText(`ALTITUDE · ${data.title.toUpperCase()}`, 12, 11);
+  ctx.font = "9px 'Inter', system-ui, sans-serif";
+  ctx.fillText('Shaded = imaging time', 12, 26);
+
+  const currentAlt = data.currentMs === null ? null : altitudeAt(data, data.currentMs);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = textColor;
+  ctx.font = "600 18px 'Outfit', 'Inter', system-ui, sans-serif";
+  ctx.fillText(currentAlt === null ? '—' : `${Math.round(currentAlt)}°`, width - 12, 8);
+
+  // Horizontal grid + altitude labels.
+  ctx.font = "9px 'Inter', system-ui, sans-serif";
+  ctx.textBaseline = 'middle';
+  for (const alt of [0, 30, 60, MAX_ALTITUDE_DEG]) {
+    const y = yOf(alt);
+    ctx.strokeStyle = gridColor;
+    ctx.setLineDash(alt === 0 ? [] : [2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(PLOT.left, y);
+    ctx.lineTo(PLOT.left + plotW, y);
+    ctx.stroke();
+    ctx.fillStyle = dimTextColor;
+    ctx.fillText(`${alt}°`, PLOT.left - 6, y);
+  }
+  ctx.setLineDash([]);
+
+  // Time axis ticks.
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const tick of chartTicks(data)) {
+    const x = xOf(tick);
+    ctx.strokeStyle = gridColor;
+    ctx.beginPath();
+    ctx.moveTo(x, plotBottom);
+    ctx.lineTo(x, plotBottom + 3);
+    ctx.stroke();
+    ctx.fillStyle = dimTextColor;
+    ctx.fillText(`${String(new Date(tick).getUTCHours()).padStart(2, '0')}:00`, x, plotBottom + 6);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText('UTC', 4, plotBottom + 6);
+
+  // Imaging band: the time the session actually spent shooting.
+  const bandStart = Math.max(PLOT.left, xOf(data.spanStartMs));
+  const bandEnd = Math.min(PLOT.left + plotW, xOf(data.spanEndMs));
+  if (bandEnd > bandStart) {
+    ctx.fillStyle = withAlpha(data.color, 0.16);
+    ctx.fillRect(bandStart, PLOT.top, bandEnd - bandStart, plotH);
+    ctx.fillStyle = withAlpha(data.color, 0.9);
+    ctx.fillRect(bandStart, plotBottom - 2, bandEnd - bandStart, 2);
+  }
+
+  // Whole-night curve, dim; the part already revealed is redrawn on top in colour.
+  strokeAltitude(ctx, data, sampleMs, xOf, yOf, Infinity, curveColor, 1.5);
+  if (data.currentMs !== null) {
+    ctx.shadowColor = data.color;
+    ctx.shadowBlur = 6;
+    strokeAltitude(ctx, data, sampleMs, xOf, yOf, data.currentMs, data.color, 2.2);
+    ctx.shadowBlur = 0;
+
+    if (currentAlt !== null) {
+      const x = xOf(data.currentMs);
+      ctx.strokeStyle = withAlpha(data.color, 0.5);
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, PLOT.top);
+      ctx.lineTo(x, plotBottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.strokeStyle = withAlpha(data.color, 0.7);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, yOf(currentAlt), 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(x, yOf(currentAlt), 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   ctx.restore();
+}
+
+/**
+ * Strokes the altitude curve up to `untilMs`, breaking the line where the
+ * target is below the horizon and ending exactly on the horizon crossing.
+ */
+function strokeAltitude(
+  ctx: CanvasRenderingContext2D,
+  data: AltitudeChartData,
+  sampleMs: (index: number) => number,
+  xOf: (ms: number) => number,
+  yOf: (alt: number) => number,
+  untilMs: number,
+  color: string,
+  lineWidth: number,
+): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  let penDown = false;
+  for (let i = 0; i < data.altitudes.length; i += 1) {
+    const ms = sampleMs(i);
+    if (ms > untilMs) break;
+    const alt = data.altitudes[i]!;
+    const previous = i > 0 ? data.altitudes[i - 1]! : alt;
+    if (alt >= 0) {
+      if (!penDown) {
+        if (i > 0 && previous < 0) {
+          const crossing = previous / (previous - alt);
+          ctx.moveTo(xOf(sampleMs(i - 1) + crossing * (ms - sampleMs(i - 1))), yOf(0));
+          ctx.lineTo(xOf(ms), yOf(alt));
+        } else {
+          ctx.moveTo(xOf(ms), yOf(alt));
+        }
+        penDown = true;
+      } else {
+        ctx.lineTo(xOf(ms), yOf(alt));
+      }
+    } else if (penDown) {
+      const crossing = previous / (previous - alt);
+      ctx.lineTo(xOf(sampleMs(i - 1) + crossing * (ms - sampleMs(i - 1))), yOf(0));
+      penDown = false;
+    }
+  }
+  ctx.stroke();
 }

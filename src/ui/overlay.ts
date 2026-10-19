@@ -1,15 +1,15 @@
 /**
  * Overlay manager: counter (top-left), stats panel (below counter),
- * altitude mini-chart (bottom-right), and a master visibility toggle
- * that hides/shows all three. Each panel has its own toggle too --
- * section 3.8 of the migration prompt.
+ * altitude chart (bottom-right), and a master visibility toggle that
+ * hides/shows all three. Each panel has its own toggle too -- section 3.8
+ * of the migration prompt.
  *
- * Caches the altitude curve by nightIndex so the (comparatively heavy)
- * 48-sample compute only runs when the active session changes, not on
- * every reveal tick (the Python project's optimization, kept for
- * parity even though Canvas2D is much cheaper than matplotlib).
+ * The altitude chart data (the night's whole curve) is cached per session,
+ * so the 96-sample computation only runs when the active night, its colour
+ * or its name changes -- not on every reveal tick. The chart is redrawn on
+ * every tick because its progress dot moves.
  *
- * `renderTo(ctx, width, height)` mirrors the live DOM overlay onto a
+ * `renderOverlayTo(ctx, width, height)` mirrors the live DOM overlay onto a
  * 2D canvas at the given size, used by the video exporter to capture
  * the same visual the user sees.
  */
@@ -18,12 +18,18 @@ import { buildTimeline, formatDuration, formatGb, type TimelinePoint } from '../
 import type { OverlayVisibility } from './session_panel';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
-import { ALTITUDE_CHART_HOURS, computeAltitudeCurve, drawAltitudeChart } from './altitude_chart';
+import {
+  CHART_HEIGHT,
+  CHART_WIDTH,
+  chartWindowForSpan,
+  computeAltitudeSeries,
+  drawAltitudeChart,
+  type AltitudeChartData,
+} from './altitude_chart';
 import { parseFitsDate } from '../astro/date_parse';
+import { roundRect } from './canvas_utils';
 import { clear, el } from './dom';
 
-const CHART_WIDTH = 220;
-const CHART_HEIGHT = 120;
 const COUNTER_TOP = 16;
 const COUNTER_LEFT = 16;
 const COUNTER_HEIGHT = 56;
@@ -39,9 +45,11 @@ const CHART_RIGHT_OFFSET = 16;
 export interface OverlaySnapshot {
   counterText: string;
   statsLines: { label: string; value: string }[];
-  chartAltitudes: number[] | null;
+  chart: AltitudeChartData | null;
   visibility: OverlayVisibility;
 }
+
+type ChartBase = Omit<AltitudeChartData, 'currentMs'>;
 
 export function mountOverlay(
   root: HTMLElement,
@@ -56,11 +64,10 @@ export function mountOverlay(
   const chartCanvas = el('canvas', {
     class: 'overlay__chart',
     id: 'overlay-chart',
-    width: String(CHART_WIDTH),
-    height: String(CHART_HEIGHT),
   }) as HTMLCanvasElement;
-  chartCanvas.width = CHART_WIDTH * window.devicePixelRatio;
-  chartCanvas.height = CHART_HEIGHT * window.devicePixelRatio;
+  const pixelRatio = window.devicePixelRatio || 1;
+  chartCanvas.width = Math.round(CHART_WIDTH * pixelRatio);
+  chartCanvas.height = Math.round(CHART_HEIGHT * pixelRatio);
   chartCanvas.style.width = `${CHART_WIDTH}px`;
   chartCanvas.style.height = `${CHART_HEIGHT}px`;
   chartWrap.appendChild(chartCanvas);
@@ -70,13 +77,20 @@ export function mountOverlay(
   if (!ctx) {
     throw new Error('Could not get 2D context for altitude chart canvas');
   }
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-  let cachedNightIndex: number | null = null;
-  let cachedCurve: number[] | null = null;
+  let cachedChartKey: string | null = null;
+  let cachedChartBase: ChartBase | null = null;
   let lastTimeline: TimelinePoint[] = [];
   let currentVisibility: OverlayVisibility = store.get().overlay;
   let currentSnapshot: OverlaySnapshot = emptySnapshot(currentVisibility);
+  let hasPoint = false;
+  let hasChart = false;
+
+  const drawLiveChart = (chart: AltitudeChartData | null) => {
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, CHART_WIDTH, CHART_HEIGHT);
+    drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, chart);
+  };
 
   const recompute = (state: AppState) => {
     if (lastTimeline.length === 0 && state.project.sessions.length > 0) {
@@ -86,24 +100,35 @@ export function mountOverlay(
     }
     if (!arraysMatchTimeline(lastTimeline, state)) {
       lastTimeline = buildTimeline(state.project);
-      cachedNightIndex = null;
-      cachedCurve = null;
+      cachedChartKey = null;
+      cachedChartBase = null;
     }
 
     currentVisibility = state.overlay;
-    const snapshot = state.playback;
-    const point = lastTimeline[snapshot.revealCount - 1];
-    const hasPoint = Boolean(point);
-    applyVisibility(state.overlay, hasPoint);
+    const playback = state.playback;
+    const point = lastTimeline[playback.revealCount - 1];
+    hasPoint = Boolean(point);
+
+    // Before playback starts the chart previews the first night's curve.
+    const chartPoint = point ?? lastTimeline[0];
+    const chartBase = chartPoint ? chartBaseFor(chartPoint, lastTimeline, state) : null;
+    const chart: AltitudeChartData | null = chartBase
+      ? {
+          ...chartBase,
+          currentMs: point ? (parseFitsDate(point.light.dateObs)?.getTime() ?? null) : null,
+        }
+      : null;
+    hasChart = chart !== null;
+    applyVisibility(state.overlay, hasPoint, hasChart);
+    drawLiveChart(chart);
 
     if (!point) {
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
-      drawEmptyChart(ctx);
       currentSnapshot = {
         counterText: formatDuration(0),
         statsLines: [],
-        chartAltitudes: null,
+        chart,
         visibility: currentVisibility,
       };
       return;
@@ -125,19 +150,27 @@ export function mountOverlay(
       ),
     );
 
-    if (cachedNightIndex !== point.nightIndex) {
-      cachedNightIndex = point.nightIndex;
-      cachedCurve = computeCurveForPoint(point);
-    }
-
-    drawChart(ctx, cachedCurve ?? [], ALTITUDE_CHART_HOURS);
-
     currentSnapshot = {
       counterText: formatDuration(point.cumulativeExptimeS),
       statsLines,
-      chartAltitudes: cachedCurve,
+      chart,
       visibility: currentVisibility,
     };
+  };
+
+  const chartBaseFor = (
+    point: TimelinePoint,
+    timeline: TimelinePoint[],
+    state: AppState,
+  ): ChartBase | null => {
+    const session = state.project.sessions[point.nightIndex - 1];
+    if (!session) return null;
+    const key = `${point.nightIndex}|${session.color}|${session.name}`;
+    if (cachedChartKey !== key) {
+      cachedChartKey = key;
+      cachedChartBase = buildChartBase(point, timeline, session.color, session.name);
+    }
+    return cachedChartBase;
   };
 
   store.subscribe(recompute);
@@ -148,14 +181,13 @@ export function mountOverlay(
     setVisibility: (visibility: OverlayVisibility) => {
       currentVisibility = visibility;
       currentSnapshot = { ...currentSnapshot, visibility };
-      const point = lastTimeline[store.get().playback.revealCount - 1];
-      applyVisibility(visibility, Boolean(point));
+      applyVisibility(visibility, hasPoint, hasChart);
     },
   };
 }
 
 function emptySnapshot(visibility: OverlayVisibility): OverlaySnapshot {
-  return { counterText: formatDuration(0), statsLines: [], chartAltitudes: null, visibility };
+  return { counterText: formatDuration(0), statsLines: [], chart: null, visibility };
 }
 
 export function renderOverlayTo(
@@ -166,23 +198,22 @@ export function renderOverlayTo(
 ): void {
   ctx.save();
   if (snapshot.visibility.visible && snapshot.visibility.counter) {
-    drawCounter(ctx, width, height, snapshot.counterText);
+    drawCounter(ctx, snapshot.counterText);
   }
   if (snapshot.visibility.visible && snapshot.visibility.stats) {
-    drawStats(ctx, width, height, snapshot.statsLines);
+    drawStats(ctx, snapshot.statsLines);
   }
-  if (snapshot.visibility.visible && snapshot.visibility.chart) {
-    drawChartTo(ctx, width, height, snapshot.chartAltitudes);
+  if (snapshot.visibility.visible && snapshot.visibility.chart && snapshot.chart) {
+    ctx.translate(
+      width - CHART_WIDTH - CHART_RIGHT_OFFSET,
+      height - CHART_HEIGHT - CHART_BOTTOM_OFFSET,
+    );
+    drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, snapshot.chart);
   }
   ctx.restore();
 }
 
-function drawCounter(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  text: string,
-): void {
+function drawCounter(ctx: CanvasRenderingContext2D, text: string): void {
   ctx.save();
   const boxW = 180;
   const boxH = COUNTER_HEIGHT;
@@ -198,16 +229,9 @@ function drawCounter(
   ctx.textAlign = 'left';
   ctx.fillText(text, COUNTER_LEFT + 14, COUNTER_TOP + boxH / 2 + 1);
   ctx.restore();
-  void width;
-  void height;
 }
 
-function drawStats(
-  ctx: CanvasRenderingContext2D,
-  _width: number,
-  _height: number,
-  lines: { label: string; value: string }[],
-): void {
+function drawStats(ctx: CanvasRenderingContext2D, lines: { label: string; value: string }[]): void {
   if (lines.length === 0) return;
   ctx.save();
   const boxW = 180;
@@ -232,69 +256,11 @@ function drawStats(
   ctx.restore();
 }
 
-let offscreenChartCanvas: HTMLCanvasElement | null = null;
-let offscreenChartCtx: CanvasRenderingContext2D | null = null;
-
-function getOffscreenChart(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
-  if (!offscreenChartCanvas || !offscreenChartCtx) {
-    offscreenChartCanvas = document.createElement('canvas');
-    offscreenChartCanvas.width = CHART_WIDTH;
-    offscreenChartCanvas.height = CHART_HEIGHT;
-    const ctx = offscreenChartCanvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get 2D context for offscreen chart');
-    offscreenChartCtx = ctx;
-  }
-  return { canvas: offscreenChartCanvas, ctx: offscreenChartCtx };
-}
-
-function drawChartTo(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  altitudes: number[] | null,
+function applyVisibility(
+  visibility: OverlayVisibility,
+  hasPoint: boolean,
+  hasChart: boolean,
 ): void {
-  if (altitudes === null || altitudes.length === 0) return;
-  const x = width - CHART_WIDTH - CHART_RIGHT_OFFSET;
-  const y = height - CHART_HEIGHT - CHART_BOTTOM_OFFSET;
-  const { canvas: chartCanvas, ctx: chartCtx } = getOffscreenChart();
-
-  chartCtx.clearRect(0, 0, CHART_WIDTH, CHART_HEIGHT);
-  drawAltitudeChart(chartCtx, altitudes, altitudes.length - 1);
-  chartCtx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-  chartCtx.font = "11px 'Inter', system-ui, sans-serif";
-  chartCtx.textBaseline = 'bottom';
-  chartCtx.textAlign = 'right';
-  chartCtx.fillText(`${ALTITUDE_CHART_HOURS}h window`, CHART_WIDTH - 10, CHART_HEIGHT - 10);
-
-  ctx.save();
-  roundRect(ctx, x, y, CHART_WIDTH, CHART_HEIGHT, 8);
-  ctx.clip();
-  ctx.drawImage(chartCanvas, x, y, CHART_WIDTH, CHART_HEIGHT);
-  ctx.restore();
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function applyVisibility(visibility: OverlayVisibility, hasPoint: boolean): void {
   const counter = document.getElementById('overlay-counter');
   const stats = document.getElementById('overlay-stats');
   const chart = document.getElementById('overlay-chart-wrap');
@@ -305,7 +271,7 @@ function applyVisibility(visibility: OverlayVisibility, hasPoint: boolean): void
     stats.style.display = visibility.visible && visibility.stats && hasPoint ? 'flex' : 'none';
   }
   if (chart) {
-    chart.style.display = visibility.visible && visibility.chart ? 'block' : 'none';
+    chart.style.display = visibility.visible && visibility.chart && hasChart ? 'block' : 'none';
   }
 }
 
@@ -320,52 +286,39 @@ function arraysMatchTimeline(timeline: TimelinePoint[], state: AppState): boolea
   );
 }
 
-function computeCurveForPoint(point: TimelinePoint): number[] | null {
+/** The night's whole altitude curve, or null when the light lacks target, site or date. */
+function buildChartBase(
+  point: TimelinePoint,
+  timeline: TimelinePoint[],
+  color: string,
+  title: string,
+): ChartBase | null {
   const light = point.light;
   if (
     light.objRaDeg === null ||
     light.objDecDeg === null ||
     light.siteLatDeg === null ||
-    light.siteLonDeg === null ||
-    !light.dateObs
+    light.siteLonDeg === null
   ) {
     return null;
   }
-  const endTime = parseFitsDate(light.dateObs);
-  if (!endTime) return null;
-  return computeAltitudeCurve(
+
+  let spanStartMs = Infinity;
+  let spanEndMs = -Infinity;
+  for (const candidate of timeline) {
+    if (candidate.nightIndex !== point.nightIndex) continue;
+    const ms = parseFitsDate(candidate.light.dateObs)?.getTime();
+    if (ms === undefined) continue;
+    spanStartMs = Math.min(spanStartMs, ms);
+    spanEndMs = Math.max(spanEndMs, ms);
+  }
+  if (!Number.isFinite(spanStartMs)) return null;
+
+  const window = chartWindowForSpan(spanStartMs, spanEndMs);
+  const altitudes = computeAltitudeSeries(
     { latitudeDeg: light.siteLatDeg, longitudeDeg: light.siteLonDeg },
     { raDeg: light.objRaDeg, decDeg: light.objDecDeg },
-    endTime,
+    window,
   );
-}
-
-function drawChart(
-  ctx: CanvasRenderingContext2D,
-  altitudes: readonly number[],
-  hours: number,
-): void {
-  if (altitudes.length === 0) {
-    drawEmptyChart(ctx);
-    return;
-  }
-  drawAltitudeChart(ctx, altitudes, altitudes.length - 1);
-  ctx.save();
-  ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-  ctx.font = '11px system-ui, sans-serif';
-  ctx.textBaseline = 'bottom';
-  ctx.textAlign = 'right';
-  ctx.fillText(`${hours}h window`, 210, 110);
-  ctx.restore();
-}
-
-function drawEmptyChart(ctx: CanvasRenderingContext2D): void {
-  drawAltitudeChart(ctx, [0, 0], 0);
-  ctx.save();
-  ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-  ctx.font = '11px system-ui, sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  ctx.fillText('No data yet', 110, 60);
-  ctx.restore();
+  return { ...window, altitudes, spanStartMs, spanEndMs, color, title };
 }

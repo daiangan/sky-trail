@@ -6,9 +6,11 @@
  *
  * Conventions match the Python project's `render.dome_view`:
  *   - Z is up, azimuth is clockwise from +Y (north) toward +X (east).
- *   - DOME_RADIUS is the arbitrary scene unit; camera distance scales
- *     with it (R*3.2 by default) so the framing is the same as the
- *     desktop tool for any chosen radius.
+ *   - DOME_RADIUS is the arbitrary scene unit. The camera orbits the
+ *     dome's visual centre and its distance is derived from the field of
+ *     view and canvas aspect, so the whole dome is framed and centred for
+ *     any window shape (see camera_framing.ts). Until the user moves the
+ *     camera the framing follows resizes; `recenter()` restores it.
  *   - The auto-orbit only rotates camera azimuth (deg/sec, range 0-60,
  *     default 4); the user can still drag/zoom on top of it via
  *     OrbitControls.
@@ -16,12 +18,17 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 import type { Project } from '../model';
 import { buildTimeline, type TimelinePoint } from '../model/timeline';
 import { computeAltAz } from '../astro/altaz';
 import { parseFitsDate } from '../astro/date_parse';
+import { computeDomeFraming } from './camera_framing';
 import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
+import { DEFAULT_FLOOR_OPACITY, DEFAULT_SURFACE_OPACITY } from './defaults';
 import { buildDomeWireframe } from './dome_geometry';
 import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
 
@@ -30,7 +37,7 @@ export interface DomeViewOptions {
   radius?: number;
   backgroundColor?: number;
   wireframeColor?: number;
-  initialCamera?: { distance?: number; elevationDeg?: number; azimuthDeg?: number };
+  initialCamera?: { elevationDeg?: number; azimuthDeg?: number };
   defaultPointSize?: number;
   defaultCameraRotationDegPerSec?: number;
   defaultPointsPerSecond?: number;
@@ -43,6 +50,29 @@ const DEFAULT_INITIAL_ELEVATION_DEG = 15;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
 const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 4;
 
+export type InteractionMode = 'orbit' | 'pan';
+
+interface SessionLayer {
+  /** Bright arc line; null when the session has fewer than two positioned points. */
+  core: Line2 | null;
+  /** Wide, soft additive line underneath the core that gives the arc its glow. */
+  glow: Line2 | null;
+  dots: THREE.Points;
+}
+
+interface CameraTween {
+  elapsed: number;
+  duration: number;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  fromPosition: THREE.Vector3;
+  toPosition: THREE.Vector3;
+}
+
+const RECENTER_SECONDS = 0.55;
+const ZOOM_STEP = 1.25;
+const MARKER_PULSE_HZ = 0.7;
+
 export class DomeView {
   private readonly canvas: HTMLCanvasElement;
   private readonly radius: number;
@@ -54,14 +84,17 @@ export class DomeView {
   private readonly domeGroup: THREE.Group;
   private readonly wireframe: THREE.LineSegments;
   private readonly wireframeMaterial: THREE.LineBasicMaterial;
+  private readonly horizonRing: THREE.LineSegments;
+  private readonly horizonMaterial: THREE.LineBasicMaterial;
   private readonly surfaceMesh: THREE.Mesh;
   private readonly surfaceMaterial: THREE.MeshBasicMaterial;
   private readonly floorMesh: THREE.Mesh;
   private readonly floorMaterial: THREE.MeshBasicMaterial;
-  private readonly sessionArcs = new Map<number, THREE.LineSegments>();
-  private readonly sessionDots = new Map<number, THREE.Points>();
+  private readonly layers = new Map<number, SessionLayer>();
   private readonly currentMarker: THREE.Points;
   private readonly currentMarkerMaterial: THREE.PointsMaterial;
+  private readonly markerHalo: THREE.Points;
+  private readonly markerHaloMaterial: THREE.PointsMaterial;
   private pointSize: number;
   private cameraRotationDegPerSec: number;
   private rafHandle: number | null = null;
@@ -69,6 +102,15 @@ export class DomeView {
   private project: Project | null = null;
   private timeline: TimelinePoint[] = [];
   private resolvedPositions = new Map<string, Vec3>();
+
+  private readonly initialElevationRad: number;
+  private readonly initialAzimuthRad: number;
+  private userMovedCamera = false;
+  private hasFramed = false;
+  private cameraTween: CameraTween | null = null;
+  private interactionMode: InteractionMode = 'orbit';
+  private readonly cameraInteractionListeners = new Set<() => void>();
+  private readonly resizeObserver: ResizeObserver;
 
   private readonly dotTexture: THREE.CanvasTexture;
   private readonly ringTexture: THREE.CanvasTexture;
@@ -111,33 +153,53 @@ export class DomeView {
     this.domeGroup.rotation.x = -Math.PI / 2;
     this.scene.add(this.domeGroup);
 
-    const initialDistance = options.initialCamera?.distance ?? this.radius * 3.2;
-    const initialElevationDeg =
-      options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG;
-    const initialAzimuthDeg = options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG;
+    this.initialElevationRad =
+      ((options.initialCamera?.elevationDeg ?? DEFAULT_INITIAL_ELEVATION_DEG) * Math.PI) / 180;
+    this.initialAzimuthRad =
+      ((options.initialCamera?.azimuthDeg ?? DEFAULT_INITIAL_AZIMUTH_DEG) * Math.PI) / 180;
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-    this.positionCameraFromSpherical(initialDistance, initialElevationDeg, initialAzimuthDeg);
 
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
+    this.controls.screenSpacePanning = true;
     this.controls.minDistance = this.radius * 1.2;
     this.controls.maxDistance = this.radius * 12;
-    this.controls.target.set(0, 0, 0);
-    this.controls.update();
+    this.controls.addEventListener('start', this.handleCameraStart);
+    this.canvas.addEventListener('dblclick', this.handleDoubleClick);
 
     const wireframe = buildDomeWireframe(this.radius);
+    const horizonVertexCount = wireframe.horizonSegments * 2 * 3;
     this.wireframeMaterial = new THREE.LineBasicMaterial({
-      color: options.wireframeColor ?? 0x668cb8,
+      color: options.wireframeColor ?? 0x7ea3d6,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.42,
       linewidth: 1,
     });
     const wireframeGeometry = new THREE.BufferGeometry();
-    wireframeGeometry.setAttribute('position', new THREE.BufferAttribute(wireframe.positions, 3));
+    wireframeGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(wireframe.positions.slice(horizonVertexCount), 3),
+    );
     this.wireframe = new THREE.LineSegments(wireframeGeometry, this.wireframeMaterial);
     this.domeGroup.add(this.wireframe);
+
+    // The horizon ring is brighter than the other rings: it is the edge of the
+    // visible sky and anchors the whole dome.
+    this.horizonMaterial = new THREE.LineBasicMaterial({
+      color: 0xa9c6ee,
+      transparent: true,
+      opacity: 0.85,
+      linewidth: 1,
+    });
+    const horizonGeometry = new THREE.BufferGeometry();
+    horizonGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(wireframe.positions.slice(0, horizonVertexCount), 3),
+    );
+    this.horizonRing = new THREE.LineSegments(horizonGeometry, this.horizonMaterial);
+    this.domeGroup.add(this.horizonRing);
 
     // Dome surface hemisphere
     const surfaceGeometry = new THREE.SphereGeometry(
@@ -150,7 +212,7 @@ export class DomeView {
       Math.PI / 2,
     );
     surfaceGeometry.rotateX(Math.PI / 2);
-    const initialSurfaceOpacity = options.defaultSurfaceOpacity ?? 0;
+    const initialSurfaceOpacity = options.defaultSurfaceOpacity ?? DEFAULT_SURFACE_OPACITY;
     this.surfaceMaterial = new THREE.MeshBasicMaterial({
       color: 0x162842,
       transparent: true,
@@ -164,7 +226,7 @@ export class DomeView {
 
     // Dome floor circle (horizon ground plane)
     const floorGeometry = new THREE.CircleGeometry(this.radius * 0.998, 64);
-    const initialFloorOpacity = options.defaultFloorOpacity ?? 0;
+    const initialFloorOpacity = options.defaultFloorOpacity ?? DEFAULT_FLOOR_OPACITY;
     this.floorMaterial = new THREE.MeshBasicMaterial({
       color: 0x0a1322,
       transparent: true,
@@ -179,6 +241,24 @@ export class DomeView {
     this.dotTexture = createDotTexture();
     this.ringTexture = createRingTexture();
 
+    const markerGeometry = new THREE.BufferGeometry();
+    markerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+
+    // Soft additive halo behind the marker ring; both pulse gently while idle.
+    this.markerHaloMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: this.pointSize * 7,
+      sizeAttenuation: false,
+      map: this.dotTexture,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.markerHalo = new THREE.Points(markerGeometry, this.markerHaloMaterial);
+    this.markerHalo.visible = false;
+    this.domeGroup.add(this.markerHalo);
+
     this.currentMarkerMaterial = new THREE.PointsMaterial({
       color: 0xffffff,
       size: this.pointSize * 2.8,
@@ -187,8 +267,6 @@ export class DomeView {
       transparent: true,
       alphaTest: 0.05,
     });
-    const markerGeometry = new THREE.BufferGeometry();
-    markerGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     this.currentMarker = new THREE.Points(markerGeometry, this.currentMarkerMaterial);
     this.currentMarker.visible = false;
     this.domeGroup.add(this.currentMarker);
@@ -208,7 +286,8 @@ export class DomeView {
     }
 
     this.resize();
-    window.addEventListener('resize', this.resize);
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(this.canvas);
     this.start();
   }
 
@@ -228,10 +307,11 @@ export class DomeView {
   setPointSize(size: number): void {
     this.pointSize = Math.max(1, size);
     this.currentMarkerMaterial.size = this.pointSize * 2.8;
-    for (const dots of this.sessionDots.values()) {
-      const material = dots.material as THREE.PointsMaterial;
-      material.size = this.pointSize;
+    this.markerHaloMaterial.size = this.pointSize * 7;
+    for (const layer of this.layers.values()) {
+      (layer.dots.material as THREE.PointsMaterial).size = this.pointSize;
     }
+    this.applyArcWidths();
   }
 
   setSurfaceOpacity(opacity: number): void {
@@ -252,6 +332,120 @@ export class DomeView {
 
   getFloorOpacity(): number {
     return this.floorMaterial.opacity;
+  }
+
+  // -- camera interaction ---------------------------------------------------
+
+  /** Smoothly returns to the centred, fully framed view, keeping the current viewing angle. */
+  recenter(): void {
+    this.userMovedCamera = false;
+    const destination = this.framingDestination(true);
+    this.cameraTween = {
+      elapsed: 0,
+      duration: RECENTER_SECONDS,
+      fromTarget: this.controls.target.clone(),
+      toTarget: destination.target,
+      fromPosition: this.camera.position.clone(),
+      toPosition: destination.position,
+    };
+  }
+
+  zoomBy(factor: number): void {
+    this.cameraTween = null;
+    this.userMovedCamera = true;
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const distance = THREE.MathUtils.clamp(
+      offset.length() * factor,
+      this.controls.minDistance,
+      this.controls.maxDistance,
+    );
+    this.camera.position.copy(this.controls.target).add(offset.setLength(distance));
+  }
+
+  zoomIn(): void {
+    this.zoomBy(1 / ZOOM_STEP);
+  }
+
+  zoomOut(): void {
+    this.zoomBy(ZOOM_STEP);
+  }
+
+  /** In 'pan' mode a plain drag moves the dome; in 'orbit' mode it rotates the view. */
+  setInteractionMode(mode: InteractionMode): void {
+    this.interactionMode = mode;
+    this.controls.mouseButtons.LEFT = mode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    this.controls.touches.ONE = mode === 'pan' ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+  }
+
+  getInteractionMode(): InteractionMode {
+    return this.interactionMode;
+  }
+
+  /** Fires when the user starts dragging or zooming the view. Returns an unsubscribe function. */
+  onCameraInteraction(listener: () => void): () => void {
+    this.cameraInteractionListeners.add(listener);
+    return () => {
+      this.cameraInteractionListeners.delete(listener);
+    };
+  }
+
+  private readonly handleCameraStart = (): void => {
+    this.cameraTween = null;
+    this.userMovedCamera = true;
+    for (const listener of this.cameraInteractionListeners) listener();
+  };
+
+  private readonly handleDoubleClick = (): void => {
+    this.recenter();
+  };
+
+  /** Where the camera should sit to frame the whole dome, optionally keeping the current angle. */
+  private framingDestination(keepAngles: boolean): {
+    target: THREE.Vector3;
+    position: THREE.Vector3;
+  } {
+    const { targetY, distance } = computeDomeFraming({
+      radius: this.radius,
+      verticalFovDeg: this.camera.fov,
+      aspect: this.camera.aspect,
+    });
+    const target = new THREE.Vector3(0, targetY, 0);
+    let azimuth = this.initialAzimuthRad;
+    let elevation = this.initialElevationRad;
+    if (keepAngles) {
+      const spherical = new THREE.Spherical().setFromVector3(
+        this.camera.position.clone().sub(this.controls.target),
+      );
+      azimuth = spherical.theta;
+      elevation = Math.PI / 2 - spherical.phi;
+    }
+    const position = new THREE.Vector3(
+      distance * Math.cos(elevation) * Math.sin(azimuth),
+      distance * Math.sin(elevation),
+      distance * Math.cos(elevation) * Math.cos(azimuth),
+    ).add(target);
+    return { target, position };
+  }
+
+  private fitCameraNow(): void {
+    const destination = this.framingDestination(this.hasFramed);
+    this.hasFramed = true;
+    this.controls.target.copy(destination.target);
+    this.camera.position.copy(destination.position);
+    this.camera.lookAt(destination.target);
+    this.controls.update();
+  }
+
+  private advanceCameraTween(dt: number): void {
+    const tween = this.cameraTween;
+    if (!tween) return;
+    tween.elapsed += dt;
+    const progress = Math.min(1, tween.elapsed / tween.duration);
+    const eased = 1 - (1 - progress) ** 3;
+    this.controls.target.lerpVectors(tween.fromTarget, tween.toTarget, eased);
+    this.camera.position.lerpVectors(tween.fromPosition, tween.toPosition, eased);
+    this.camera.lookAt(this.controls.target);
+    if (progress >= 1) this.cameraTween = null;
   }
 
   play(): void {
@@ -328,15 +522,26 @@ export class DomeView {
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
+    for (const layer of this.layers.values()) {
+      for (const line of [layer.core, layer.glow]) {
+        line?.material.resolution.set(clientWidth, clientHeight);
+      }
+    }
+    if (!this.userMovedCamera && !this.cameraTween) this.fitCameraNow();
   };
 
   dispose(): void {
     this.stop();
-    window.removeEventListener('resize', this.resize);
+    this.resizeObserver.disconnect();
+    this.controls.removeEventListener('start', this.handleCameraStart);
+    this.canvas.removeEventListener('dblclick', this.handleDoubleClick);
     this.controls.dispose();
     this.wireframeMaterial.dispose();
+    this.horizonMaterial.dispose();
     this.currentMarkerMaterial.dispose();
+    this.markerHaloMaterial.dispose();
     this.wireframe.geometry.dispose();
+    this.horizonRing.geometry.dispose();
     this.currentMarker.geometry.dispose();
     this.surfaceMesh.geometry.dispose();
     this.surfaceMaterial.dispose();
@@ -349,14 +554,7 @@ export class DomeView {
       sprite.material.map?.dispose();
       sprite.material.dispose();
     }
-    for (const arc of this.sessionArcs.values()) {
-      arc.geometry.dispose();
-      (arc.material as THREE.Material).dispose();
-    }
-    for (const dots of this.sessionDots.values()) {
-      dots.geometry.dispose();
-      (dots.material as THREE.Material).dispose();
-    }
+    this.disposeLayers();
     this.renderer.dispose();
   }
 
@@ -383,10 +581,18 @@ export class DomeView {
 
     this.playback.tick(dt);
     this.applyAutoOrbit(dt);
+    this.advanceCameraTween(dt);
     this.updateRevealedPoints(this.playback.snapshot().revealCount);
+    this.pulseMarker(now / 1000);
 
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private pulseMarker(seconds: number): void {
+    const pulse = 1 + 0.12 * Math.sin(seconds * 2 * Math.PI * MARKER_PULSE_HZ);
+    this.currentMarkerMaterial.size = this.pointSize * 2.8 * pulse;
+    this.markerHaloMaterial.size = this.pointSize * 7 * pulse;
   }
 
   private applyAutoOrbit(dt: number): void {
@@ -403,35 +609,54 @@ export class DomeView {
     this.camera.lookAt(target);
   }
 
-  private positionCameraFromSpherical(
-    distance: number,
-    elevationDeg: number,
-    azimuthDeg: number,
-  ): void {
-    const elevation = (elevationDeg * Math.PI) / 180;
-    const azimuth = (azimuthDeg * Math.PI) / 180;
-    this.camera.position.set(
-      distance * Math.cos(elevation) * Math.sin(azimuth),
-      distance * Math.sin(elevation),
-      distance * Math.cos(elevation) * Math.cos(azimuth),
-    );
-    this.camera.lookAt(0, 0, 0);
+  private arcCoreWidth(): number {
+    return Math.min(9, Math.max(1.5, this.pointSize * 0.45));
+  }
+
+  private applyArcWidths(): void {
+    const core = this.arcCoreWidth();
+    for (const layer of this.layers.values()) {
+      if (layer.core) layer.core.material.linewidth = core;
+      if (layer.glow) layer.glow.material.linewidth = core * 3.5;
+    }
+  }
+
+  private disposeLayers(): void {
+    for (const layer of this.layers.values()) {
+      for (const line of [layer.core, layer.glow]) {
+        if (!line) continue;
+        this.domeGroup.remove(line);
+        line.geometry.dispose();
+        line.material.dispose();
+      }
+      this.domeGroup.remove(layer.dots);
+      layer.dots.geometry.dispose();
+      (layer.dots.material as THREE.Material).dispose();
+    }
+    this.layers.clear();
+  }
+
+  private makeArcLine(flat: Float32Array, color: THREE.Color, width: number, glow: boolean): Line2 {
+    const geometry = new LineGeometry();
+    geometry.setPositions(flat);
+    const material = new LineMaterial({
+      color,
+      linewidth: width,
+      transparent: true,
+      opacity: glow ? 0.22 : 1,
+      depthWrite: false,
+      blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    material.resolution.set(this.canvas.clientWidth || 1, this.canvas.clientHeight || 1);
+    const line = new Line2(geometry, material);
+    line.frustumCulled = false;
+    return line;
   }
 
   private rebuildArcs(): void {
-    for (const arc of this.sessionArcs.values()) {
-      this.domeGroup.remove(arc);
-      arc.geometry.dispose();
-      (arc.material as THREE.Material).dispose();
-    }
-    for (const dots of this.sessionDots.values()) {
-      this.domeGroup.remove(dots);
-      dots.geometry.dispose();
-      (dots.material as THREE.Material).dispose();
-    }
-    this.sessionArcs.clear();
-    this.sessionDots.clear();
+    this.disposeLayers();
     this.currentMarker.visible = false;
+    this.markerHalo.visible = false;
 
     if (!this.project) return;
     this.timeline = buildTimeline(this.project);
@@ -439,32 +664,25 @@ export class DomeView {
     this.playback.setTimelineLength(this.timeline.length);
 
     const project = this.project;
+    const coreWidth = this.arcCoreWidth();
     for (let i = 0; i < project.sessions.length; i += 1) {
       const session = project.sessions[i]!;
       const color = new THREE.Color(session.color);
       const arcPositions = this.timeline
         .filter((point) => point.nightIndex === i + 1)
         .map((point) => this.resolvedPositions.get(point.light.path) ?? null);
+      const flat = filteredToFloat32(arcPositions);
 
-      const arcGeometry = new THREE.BufferGeometry();
-      arcGeometry.setAttribute(
-        'position',
-        new THREE.BufferAttribute(filteredToFloat32(arcPositions), 3),
-      );
-      const arcMaterial = new THREE.LineBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.95,
-      });
-      const arc = new THREE.Line(arcGeometry, arcMaterial);
-      this.domeGroup.add(arc);
-      this.sessionArcs.set(i, arc as unknown as THREE.LineSegments);
+      let core: Line2 | null = null;
+      let glow: Line2 | null = null;
+      if (flat.length >= 6) {
+        glow = this.makeArcLine(flat, color, coreWidth * 3.5, true);
+        core = this.makeArcLine(flat, color, coreWidth, false);
+        this.domeGroup.add(glow, core);
+      }
 
       const dotsGeometry = new THREE.BufferGeometry();
-      dotsGeometry.setAttribute(
-        'position',
-        new THREE.BufferAttribute(filteredToFloat32(arcPositions), 3),
-      );
+      dotsGeometry.setAttribute('position', new THREE.BufferAttribute(flat, 3));
       const dotsMaterial = new THREE.PointsMaterial({
         color,
         size: this.pointSize,
@@ -475,7 +693,7 @@ export class DomeView {
       });
       const dots = new THREE.Points(dotsGeometry, dotsMaterial);
       this.domeGroup.add(dots);
-      this.sessionDots.set(i, dots);
+      this.layers.set(i, { core, glow, dots });
     }
 
     this.updateRevealedPoints(0);
@@ -491,16 +709,11 @@ export class DomeView {
       sessionPointCounts.set(sessionIndex, (sessionPointCounts.get(sessionIndex) ?? 0) + 1);
     }
 
-    const sessionTotal = this.project?.sessions.length ?? 0;
-    for (let s = 0; s < sessionTotal; s += 1) {
-      const count = sessionPointCounts.get(s) ?? 0;
-      const dots = this.sessionDots.get(s);
-      if (dots) {
-        (dots.geometry as THREE.BufferGeometry).setDrawRange(0, count);
-      }
-      const arc = this.sessionArcs.get(s);
-      if (arc) {
-        (arc.geometry as THREE.BufferGeometry).setDrawRange(0, count);
+    for (const [sessionIndex, layer] of this.layers) {
+      const count = sessionPointCounts.get(sessionIndex) ?? 0;
+      layer.dots.geometry.setDrawRange(0, count);
+      for (const line of [layer.core, layer.glow]) {
+        if (line) line.geometry.instanceCount = Math.max(0, count - 1);
       }
     }
 
@@ -514,12 +727,15 @@ export class DomeView {
         attr.needsUpdate = true;
         const session = this.project?.sessions[lastPoint.nightIndex - 1];
         if (session) {
-          this.currentMarkerMaterial.color = new THREE.Color(session.color);
+          this.currentMarkerMaterial.color.set(session.color);
+          this.markerHaloMaterial.color.set(session.color);
         }
         this.currentMarker.visible = true;
+        this.markerHalo.visible = true;
       }
     } else {
       this.currentMarker.visible = false;
+      this.markerHalo.visible = false;
     }
   }
 }

@@ -26,6 +26,15 @@ describe('buildDomeWireframe', () => {
     expect(wf.positions.length).toBe(708 * 2 * 3);
   });
 
+  it('puts the horizon ring first so it can be styled separately', () => {
+    const wf = buildDomeWireframe();
+    expect(wf.horizonSegments).toBe(DOME_RING_SAMPLES);
+    // Every vertex of the first ring lies on the horizon plane (z = 0).
+    for (let i = 0; i < wf.horizonSegments * 2; i += 1) {
+      expect(Math.abs(wf.positions[i * 3 + 2]!)).toBeLessThan(1e-4);
+    }
+  });
+
   it('places all vertices on the dome surface (within rounding)', () => {
     const wf = buildDomeWireframe();
     const radius = 10;
