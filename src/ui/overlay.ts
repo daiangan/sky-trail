@@ -27,18 +27,20 @@ import {
   type AltitudeChartData,
 } from './altitude_chart';
 import { parseFitsDate } from '../astro/date_parse';
+import { announce } from './announce';
 import { roundRect } from './canvas_utils';
 import { clear, el } from './dom';
 
-const COUNTER_TOP = 16;
-const COUNTER_LEFT = 16;
-const COUNTER_HEIGHT = 56;
-const COUNTER_FONT = "700 24px 'Outfit', 'Inter', system-ui, sans-serif";
-const STATS_TOP = COUNTER_TOP + COUNTER_HEIGHT + 10;
-const STATS_LEFT = COUNTER_LEFT;
-const STATS_FONT = "12px 'Inter', system-ui, monospace, sans-serif";
+const HUD_LEFT = 16;
+const HUD_TOP = 16;
+const HUD_WIDTH = 204;
+const HUD_RADIUS = 10;
+const COUNTER_BLOCK_HEIGHT = 58;
+const COUNTER_FONT = "700 26px 'Outfit', 'Inter', system-ui, sans-serif";
+const STATS_PADDING = 12;
+const STATS_LINE_HEIGHT = 21;
+const STATS_FONT = "500 13px 'Inter', system-ui, sans-serif";
 const STATS_LABEL_FONT = "600 11px 'Inter', system-ui, sans-serif";
-const STATS_LINE_GAP = 20;
 const CHART_BOTTOM_OFFSET = 16;
 const CHART_RIGHT_OFFSET = 16;
 
@@ -71,7 +73,8 @@ export function mountOverlay(
   chartCanvas.style.width = `${CHART_WIDTH}px`;
   chartCanvas.style.height = `${CHART_HEIGHT}px`;
   chartWrap.appendChild(chartCanvas);
-  root.append(counter, stats, chartWrap);
+  const hud = el('div', { class: 'overlay__hud', id: 'overlay-hud' }, [counter, stats]);
+  root.append(hud, chartWrap);
 
   const ctx = chartCanvas.getContext('2d');
   if (!ctx) {
@@ -81,10 +84,13 @@ export function mountOverlay(
   let cachedChartKey: string | null = null;
   let cachedChartBase: ChartBase | null = null;
   let lastTimeline: TimelinePoint[] = [];
+  let lastProject: AppState['project'] | null = null;
   let currentVisibility: OverlayVisibility = store.get().overlay;
   let currentSnapshot: OverlaySnapshot = emptySnapshot(currentVisibility);
   let hasPoint = false;
   let hasChart = false;
+  let announcedNight: number | null = null;
+  let announcedFinish = false;
 
   const drawLiveChart = (chart: AltitudeChartData | null) => {
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -93,13 +99,11 @@ export function mountOverlay(
   };
 
   const recompute = (state: AppState) => {
-    if (lastTimeline.length === 0 && state.project.sessions.length > 0) {
-      lastTimeline = buildTimeline(state.project);
-    } else if (state.project.sessions.length === 0) {
-      lastTimeline = [];
-    }
-    if (!arraysMatchTimeline(lastTimeline, state)) {
-      lastTimeline = buildTimeline(state.project);
+    // The project is immutable, so a new object means lights, sessions or
+    // colours changed and the cached timeline and chart are stale.
+    if (state.project !== lastProject) {
+      lastProject = state.project;
+      lastTimeline = state.project.sessions.length > 0 ? buildTimeline(state.project) : [];
       cachedChartKey = null;
       cachedChartBase = null;
     }
@@ -123,6 +127,8 @@ export function mountOverlay(
     drawLiveChart(chart);
 
     if (!point) {
+      announcedNight = null;
+      announcedFinish = false;
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
       currentSnapshot = {
@@ -134,6 +140,17 @@ export function mountOverlay(
       return;
     }
 
+    if (playback.isPlaying && point.nightIndex !== announcedNight) {
+      announce(`Night ${point.nightIndex} of ${point.totalNights}`);
+    }
+    announcedNight = point.nightIndex;
+    if (playback.isFinished && !announcedFinish) {
+      announce(
+        `Animation complete: ${formatDuration(point.cumulativeExptimeS)} across ${point.cumulativeSubframes} subframes.`,
+      );
+    }
+    announcedFinish = playback.isFinished;
+
     counter.textContent = formatDuration(point.cumulativeExptimeS);
     const statsLines = [
       { label: 'Subframes', value: String(point.cumulativeSubframes) },
@@ -143,9 +160,9 @@ export function mountOverlay(
     ];
     stats.replaceChildren(
       ...statsLines.map((line) =>
-        el('div', {}, [
-          el('span', { class: 'overlay__label' }, [`${line.label}:`]),
-          ` ${line.value}`,
+        el('div', { class: 'overlay__row' }, [
+          el('span', { class: 'overlay__label' }, [line.label]),
+          el('span', { class: 'overlay__value' }, [line.value]),
         ]),
       ),
     );
@@ -197,13 +214,9 @@ export function renderOverlayTo(
   snapshot: OverlaySnapshot,
 ): void {
   ctx.save();
-  if (snapshot.visibility.visible && snapshot.visibility.counter) {
-    drawCounter(ctx, snapshot.counterText);
-  }
-  if (snapshot.visibility.visible && snapshot.visibility.stats) {
-    drawStats(ctx, snapshot.statsLines);
-  }
-  if (snapshot.visibility.visible && snapshot.visibility.chart && snapshot.chart) {
+  const { visible, counter, stats, chart } = snapshot.visibility;
+  if (visible) drawHud(ctx, snapshot, counter, stats);
+  if (visible && chart && snapshot.chart) {
     ctx.translate(
       width - CHART_WIDTH - CHART_RIGHT_OFFSET,
       height - CHART_HEIGHT - CHART_BOTTOM_OFFSET,
@@ -213,45 +226,56 @@ export function renderOverlayTo(
   ctx.restore();
 }
 
-function drawCounter(ctx: CanvasRenderingContext2D, text: string): void {
-  ctx.save();
-  const boxW = 180;
-  const boxH = COUNTER_HEIGHT;
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.65)';
-  roundRect(ctx, COUNTER_LEFT, COUNTER_TOP, boxW, boxH, 8);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = 'rgb(220, 226, 240)';
-  ctx.font = COUNTER_FONT;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillText(text, COUNTER_LEFT + 14, COUNTER_TOP + boxH / 2 + 1);
-  ctx.restore();
-}
+/** Counter and stats share one glass panel, mirroring the DOM `.overlay__hud`. */
+function drawHud(
+  ctx: CanvasRenderingContext2D,
+  snapshot: OverlaySnapshot,
+  showCounter: boolean,
+  showStats: boolean,
+): void {
+  const lines = showStats ? snapshot.statsLines : [];
+  const statsHeight = lines.length > 0 ? lines.length * STATS_LINE_HEIGHT + STATS_PADDING * 2 : 0;
+  const counterHeight = showCounter ? COUNTER_BLOCK_HEIGHT : 0;
+  const height = counterHeight + statsHeight;
+  if (height === 0) return;
 
-function drawStats(ctx: CanvasRenderingContext2D, lines: { label: string; value: string }[]): void {
-  if (lines.length === 0) return;
   ctx.save();
-  const boxW = 180;
-  const lineH = STATS_LINE_GAP;
-  const boxH = lineH * lines.length + 14;
-  ctx.fillStyle = 'rgba(8, 10, 18, 0.65)';
-  roundRect(ctx, STATS_LEFT, STATS_TOP, boxW, boxH, 8);
+  ctx.fillStyle = 'rgba(8, 10, 18, 0.62)';
+  roundRect(ctx, HUD_LEFT, HUD_TOP, HUD_WIDTH, height, HUD_RADIUS);
   ctx.fill();
   ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.textBaseline = 'top';
-  for (let i = 0; i < lines.length; i += 1) {
-    const y = STATS_TOP + 8 + i * lineH;
-    ctx.font = STATS_LABEL_FONT;
-    ctx.fillStyle = 'rgba(150, 158, 178, 0.85)';
-    ctx.fillText(`${lines[i]!.label.toUpperCase()}:`, STATS_LEFT + 12, y);
-    ctx.font = STATS_FONT;
-    ctx.fillStyle = 'rgb(220, 226, 240)';
-    ctx.fillText(lines[i]!.value, STATS_LEFT + 12 + 75, y);
+
+  if (showCounter) {
+    ctx.fillStyle = 'rgb(226, 231, 244)';
+    ctx.font = COUNTER_FONT;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(snapshot.counterText, HUD_LEFT + 16, HUD_TOP + counterHeight / 2 + 1);
+  }
+
+  if (lines.length > 0) {
+    const top = HUD_TOP + counterHeight;
+    if (showCounter) {
+      ctx.strokeStyle = 'rgba(120, 132, 158, 0.28)';
+      ctx.beginPath();
+      ctx.moveTo(HUD_LEFT + 12, top + 0.5);
+      ctx.lineTo(HUD_LEFT + HUD_WIDTH - 12, top + 0.5);
+      ctx.stroke();
+    }
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < lines.length; i += 1) {
+      const y = top + STATS_PADDING + i * STATS_LINE_HEIGHT + STATS_LINE_HEIGHT / 2;
+      ctx.textAlign = 'left';
+      ctx.font = STATS_LABEL_FONT;
+      ctx.fillStyle = 'rgba(170, 178, 198, 0.95)';
+      ctx.fillText(lines[i]!.label.toUpperCase(), HUD_LEFT + 16, y);
+      ctx.textAlign = 'right';
+      ctx.font = STATS_FONT;
+      ctx.fillStyle = 'rgb(226, 231, 244)';
+      ctx.fillText(lines[i]!.value, HUD_LEFT + HUD_WIDTH - 16, y);
+    }
   }
   ctx.restore();
 }
@@ -261,29 +285,18 @@ function applyVisibility(
   hasPoint: boolean,
   hasChart: boolean,
 ): void {
+  const hud = document.getElementById('overlay-hud');
   const counter = document.getElementById('overlay-counter');
   const stats = document.getElementById('overlay-stats');
   const chart = document.getElementById('overlay-chart-wrap');
-  if (counter) {
-    counter.style.display = visibility.visible && visibility.counter ? 'block' : 'none';
-  }
-  if (stats) {
-    stats.style.display = visibility.visible && visibility.stats && hasPoint ? 'flex' : 'none';
-  }
+  const showCounter = visibility.visible && visibility.counter;
+  const showStats = visibility.visible && visibility.stats && hasPoint;
+  if (hud) hud.style.display = showCounter || showStats ? 'flex' : 'none';
+  if (counter) counter.style.display = showCounter ? 'block' : 'none';
+  if (stats) stats.style.display = showStats ? 'flex' : 'none';
   if (chart) {
     chart.style.display = visibility.visible && visibility.chart && hasChart ? 'block' : 'none';
   }
-}
-
-function arraysMatchTimeline(timeline: TimelinePoint[], state: AppState): boolean {
-  const sessions = state.project.sessions;
-  if (timeline.length === 0) return sessions.length === 0;
-  let lights = 0;
-  for (const s of sessions) lights += s.lights.length;
-  return (
-    sessions.length === (timeline[timeline.length - 1]?.totalNights ?? 0) &&
-    lights >= timeline.length
-  );
 }
 
 /** The night's whole altitude curve, or null when the light lacks target, site or date. */

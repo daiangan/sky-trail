@@ -13,6 +13,7 @@
  */
 
 import { computeAltAz } from '../astro/altaz';
+import { parseFitsDate } from '../astro/date_parse';
 import { hasPosition, type LightFrame } from './light_frame';
 import type { Project } from './project';
 import { allLights } from './project';
@@ -44,9 +45,16 @@ export function buildTimeline(project: Project, altaz: AltAzFn = defaultAltAz): 
     positioned.push({ light: resolved, nightIndex, order: order++ });
   }
 
-  const withDate = positioned.filter((p) => p.light.dateObs !== null);
-  const withoutDate = positioned.filter((p) => p.light.dateObs === null);
-  withDate.sort((a, b) => a.light.dateObs!.localeCompare(b.light.dateObs!));
+  // Sort by the parsed instant, not the raw string: DATE-OBS comes in several
+  // spellings (space or "T" separator, with or without "Z" or an offset), and
+  // comparing those as text puts some earlier frames after later ones. The
+  // sort is stable, so equal instants keep their assignment order.
+  const dated = positioned.map((p) => ({
+    ...p,
+    ms: parseFitsDate(p.light.dateObs)?.getTime() ?? null,
+  }));
+  const withDate = dated.filter((p) => p.ms !== null).sort((a, b) => a.ms! - b.ms!);
+  const withoutDate = dated.filter((p) => p.ms === null);
 
   const sorted = [...withDate, ...withoutDate];
   const totalNights = project.sessions.length;

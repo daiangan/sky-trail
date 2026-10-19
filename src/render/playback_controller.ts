@@ -76,6 +76,20 @@ export class PlaybackController {
     }
   }
 
+  /**
+   * Jump to `count` revealed points (the timeline scrubber). Playback state is
+   * left alone, so scrubbing during play keeps playing from the new position;
+   * landing on the last point pauses, like reaching the end naturally.
+   */
+  seek(count: number): void {
+    if (this.timelineLength === 0) return;
+    const target = Math.max(0, Math.min(Math.round(count), this.timelineLength));
+    this.revealProgress = target;
+    this.revealCount = target;
+    if (target >= this.timelineLength) this.isPlaying = false;
+    this.notify();
+  }
+
   play(): void {
     if (this.timelineLength === 0) return;
     if (this.revealCount >= this.timelineLength) {

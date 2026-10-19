@@ -7,8 +7,8 @@
   --border: rgba(120, 132, 158, 0.18);
   --border-strong: rgba(120, 132, 158, 0.35);
   --fg: rgb(220, 226, 240);
-  --fg-dim: rgb(150, 158, 178);
-  --fg-faint: rgb(96, 104, 124);
+  --fg-dim: rgb(172, 180, 200);
+  --fg-faint: rgb(134, 143, 165);
   --accent: rgb(79, 195, 247);
   --danger: rgb(239, 83, 80);
   --radius: 8px;
@@ -98,20 +98,7 @@ body {
   display: block;
 }
 
-@media (max-width: 900px) {
-  .app-layout {
-    grid-template-columns: 1fr;
-  }
-  .app-layout__panel {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    max-height: 40vh;
-  }
-  .app-layout__panel--right {
-    border-left: none;
-    border-top: 1px solid var(--border);
-  }
-}
+/* Narrow screens: see the "Mobile layout" section at the end of this file. */
 
 /* ------------------------------------------------------------------ */
 /* Placeholders                                                         */
@@ -165,49 +152,64 @@ body {
   font-family: inherit;
 }
 
-.overlay__counter {
+.overlay__hud {
   position: absolute;
   top: 1rem;
   left: 1rem;
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--fg);
-  padding: 0.5rem 1rem;
-  background: rgba(8, 10, 18, 0.55);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  width: 204px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 10, 18, 0.62);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  min-width: 8rem;
+  overflow: hidden;
+}
+
+.overlay__counter {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
 }
 
 .overlay__stats {
-  position: absolute;
-  top: 4.5rem;
-  left: 1rem;
-  font-size: 0.75rem;
-  color: var(--fg-dim);
-  padding: 0.625rem 0.875rem;
-  background: rgba(8, 10, 18, 0.55);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  min-width: 8rem;
-  display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  padding: 12px 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.overlay__counter + .overlay__stats {
+  border-top: 1px solid var(--border);
+}
+
+.overlay__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 21px;
 }
 
 .overlay__label {
-  display: inline-block;
-  color: var(--fg-faint);
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.625rem;
-  margin-right: 0.25rem;
+  font-size: 0.6875rem;
+}
+
+.overlay__value {
+  font-variant-numeric: tabular-nums;
 }
 
 .overlay__chart-wrap {
@@ -415,8 +417,9 @@ body {
 
 .session-row__summary {
   display: flex;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
 }
 
@@ -424,6 +427,11 @@ body {
 .session-row__time,
 .session-row__date {
   white-space: nowrap;
+}
+
+/* The date sits on its own line so the row never clips against the action buttons. */
+.session-row__date {
+  flex-basis: 100%;
 }
 
 .iconbtn {
@@ -472,7 +480,7 @@ body {
 }
 
 .session-actions__hint {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
   margin: 0;
 }
@@ -483,8 +491,8 @@ body {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem 0.875rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   color: var(--fg);
   font-size: 0.875rem;
@@ -495,8 +503,13 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(172, 180, 200, 0.55);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn:disabled {
@@ -516,22 +529,36 @@ body {
   border-color: rgb(105, 205, 247);
 }
 
-.btn--export {
-  background: linear-gradient(135deg, rgb(79, 195, 247) 0%, rgb(40, 160, 235) 100%);
-  border-color: var(--accent);
-  color: rgb(8, 10, 18);
-  font-weight: 600;
-  box-shadow: 0 0 12px rgba(79, 195, 247, 0.25);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+.btn--large {
+  padding: 0.7rem 1rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  box-shadow: 0 0 16px rgba(79, 195, 247, 0.22);
 }
 
-.btn--export:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgb(115, 215, 255) 0%, rgb(60, 180, 250) 100%);
-  border-color: rgb(115, 215, 255);
-  box-shadow: 0 0 16px rgba(79, 195, 247, 0.45);
+/* Secondary action that still reads as important: outlined, not filled. */
+.btn--outline {
+  background: rgba(79, 195, 247, 0.08);
+  border-color: rgba(79, 195, 247, 0.55);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn--outline:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.18);
+  border-color: var(--accent);
+}
+
+/* Low-emphasis action, full width so its label is never clipped. */
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
 }
 
 .session-progress__inner {
@@ -554,7 +581,7 @@ body {
 }
 
 .session-progress__text {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--fg-faint);
   letter-spacing: 0.04em;
 }
@@ -601,9 +628,8 @@ body {
 .slider {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-rows: auto auto;
   gap: 0.125rem 0.5rem;
-  align-items: center;
+  align-items: baseline;
 }
 
 .slider__label {
@@ -612,10 +638,19 @@ body {
 }
 
 .slider__value {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
+}
+
+.slider__hint {
+  grid-column: 1 / span 2;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fg-faint);
 }
 
 .slider__range {
@@ -728,7 +763,7 @@ body {
 }
 
 .dialog__subtitle {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
   margin: 0;
 }
@@ -755,7 +790,7 @@ body {
 }
 
 .dialog__section-title {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--fg-faint);
@@ -968,48 +1003,6 @@ body {
 /* GitHub Repository Links                                             */
 /* ------------------------------------------------------------------ */
 
-.canvas-github-link {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.85rem;
-  background: rgba(8, 10, 18, 0.65);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--fg-dim);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  text-decoration: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
-}
-
-.canvas-github-link:hover {
-  background: rgba(28, 34, 50, 0.85);
-  border-color: var(--border-strong);
-  color: var(--fg);
-  transform: translateY(-1px);
-}
-
-.canvas-github-link svg {
-  color: var(--fg-dim);
-  transition: color 120ms ease;
-}
-
-.canvas-github-link:hover svg {
-  color: #fff;
-}
-
 .controls__footer {
   margin-top: auto;
   padding-top: 1rem;
@@ -1044,4 +1037,309 @@ body {
 .github-icon {
   display: inline-flex;
   align-items: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Empty state                                                          */
+/* ------------------------------------------------------------------ */
+
+.canvas-empty-state__hint {
+  margin: -0.75rem 0 1.5rem;
+  font-size: 0.8125rem;
+  color: var(--fg-faint);
+  line-height: 1.5;
+}
+
+/* Nothing loaded yet: keep the HUD, chart and view controls out from behind the welcome card. */
+.app-layout__canvas--empty .overlay-layer,
+.app-layout__canvas--empty .view-controls {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Toasts                                                               */
+/* ------------------------------------------------------------------ */
+
+.toast-layer {
+  position: fixed;
+  top: 1rem;
+  /* Centre over the dome canvas, between the side panels (320px and 280px). */
+  left: 320px;
+  right: 280px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.toast {
+  width: min(26rem, 100%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--fg);
+  background: rgba(18, 22, 34, 0.94);
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+}
+
+.toast--info {
+  border-left-color: var(--accent);
+}
+
+.toast--success {
+  border-left-color: rgb(102, 187, 106);
+}
+
+.toast--warning {
+  border-left-color: rgb(255, 202, 40);
+}
+
+.toast--error {
+  border-left-color: var(--danger);
+}
+
+.toast__message {
+  flex: 1;
+}
+
+.toast__action {
+  flex: none;
+  padding: 0.3rem 0.625rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.1);
+  border: 1px solid rgba(79, 195, 247, 0.45);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: rgba(79, 195, 247, 0.2);
+}
+
+.toast__close {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  font-size: 1.125rem;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.toast__close:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Accessibility                                                        */
+/* ------------------------------------------------------------------ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dome-canvas:focus-visible {
+  outline-offset: -3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Mobile layout: the canvas fills the screen, panels become drawers   */
+/* ------------------------------------------------------------------ */
+
+.mobile-bar,
+.drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    display: block;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-layout__canvas {
+    position: absolute;
+    inset: 0;
+  }
+
+  .app-layout__panel {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(88vw, 21rem);
+    max-height: none;
+    background: rgb(14, 17, 28);
+    border: none;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    visibility: hidden;
+    transition:
+      transform 220ms ease,
+      visibility 0s linear 220ms;
+  }
+
+  .app-layout__panel--left {
+    left: 0;
+    border-right: 1px solid var(--border-strong);
+    transform: translateX(-105%);
+  }
+
+  .app-layout__panel--right {
+    right: 0;
+    border-left: 1px solid var(--border-strong);
+    transform: translateX(105%);
+  }
+
+  .app-layout--sessions-open .app-layout__panel--left,
+  .app-layout--controls-open .app-layout__panel--right {
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+  }
+
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: block;
+    background: rgba(4, 6, 12, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+
+  .app-layout--sessions-open .drawer-backdrop,
+  .app-layout--controls-open .drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mobile-bar {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 12;
+    display: inline-flex;
+    gap: 0.125rem;
+    padding: 0.25rem;
+    background: rgba(8, 10, 18, 0.7);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .mobile-bar__btn {
+    display: inline-grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .mobile-bar__btn:active:not(:disabled) {
+    background: rgba(79, 195, 247, 0.2);
+  }
+
+  .mobile-bar__btn:disabled {
+    opacity: 0.4;
+  }
+
+  .view-hint {
+    display: none;
+  }
+
+  /* The chart keeps its proportions but takes less room beside the view controls. */
+  .overlay__chart-wrap {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    transform: scale(0.78);
+    transform-origin: bottom right;
+  }
+
+  .view-controls {
+    left: 0.5rem;
+    bottom: 0.5rem;
+  }
+
+  .overlay__hud {
+    top: 0.5rem;
+    left: 0.5rem;
+  }
+
+  .canvas-empty-state {
+    padding: 1rem;
+  }
+
+  .canvas-empty-state__card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .canvas-empty-state__actions {
+    flex-direction: column;
+  }
+
+  .toast-layer {
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 0.5rem;
+  }
 }

@@ -11,7 +11,11 @@
  * debounce or batch.
  */
 
-import { DEFAULT_FLOOR_OPACITY, DEFAULT_SURFACE_OPACITY } from '../render/defaults';
+import {
+  DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
+  DEFAULT_FLOOR_OPACITY,
+  DEFAULT_SURFACE_OPACITY,
+} from '../render/defaults';
 import type { PlaybackSnapshot } from '../render/playback_controller';
 import { clear, el } from './dom';
 import type { OverlayVisibility } from './session_panel';
@@ -25,6 +29,7 @@ export interface ControlsPanelHandlers {
   onSurfaceOpacityChange?: (value: number) => void;
   onFloorOpacityChange?: (value: number) => void;
   onPlayPause: () => void;
+  onSeek: (revealCount: number) => void;
   onReset: () => void;
   onCoordinates: () => void;
   onExport: () => void;
@@ -44,29 +49,34 @@ export function mountControlsPanel(
 
   // --- top action buttons -----------------------------------------------
 
-  const playBtn = el('button', { class: 'btn btn--primary', id: 'play-btn', type: 'button' }, [
-    '▶ Play',
-  ]);
-  const exportBtn = el('button', { class: 'btn btn--export', id: 'export-btn', type: 'button' }, [
-    'Export Video…',
+  const playBtn = el(
+    'button',
+    { class: 'btn btn--primary btn--large', id: 'play-btn', type: 'button' },
+    ['▶ Play'],
+  );
+  const exportBtn = el('button', { class: 'btn btn--outline', id: 'export-btn', type: 'button' }, [
+    'Export video…',
   ]);
   playBtn.addEventListener('click', () => handlers.onPlayPause());
   exportBtn.addEventListener('click', () => handlers.onExport());
 
   const resetBtn = el('button', { class: 'btn', id: 'reset-btn', type: 'button' }, ['↺ Reset']);
-  const coordsBtn = el('button', { class: 'btn', id: 'coords-btn', type: 'button' }, [
-    'Object Coordinates…',
-  ]);
+  const coordsBtn = el(
+    'button',
+    {
+      class: 'btn btn--ghost',
+      id: 'coords-btn',
+      type: 'button',
+      title: 'Set the target and observing site manually when the FITS headers lack them',
+    },
+    ['Target & site coordinates…'],
+  );
   resetBtn.addEventListener('click', () => handlers.onReset());
   coordsBtn.addEventListener('click', () => handlers.onCoordinates());
 
-  const primaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
-    playBtn,
-    exportBtn,
-  ]);
   const secondaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
     resetBtn,
-    coordsBtn,
+    exportBtn,
   ]);
 
   // --- sliders ----------------------------------------------------------
@@ -74,28 +84,32 @@ export function mountControlsPanel(
   const arcSpeed = slider({
     id: 'arc-speed',
     label: 'Arc speed',
+    hint: 'How fast the arc is drawn, in frames per second.',
     min: 0.1,
     max: 500,
     step: 0.1,
     initialValue: store.get().playback.pointsPerSecond,
-    unit: ' pts/sec',
+    unit: ' frames/sec',
     onInput: (value) => handlers.onPointsPerSecondChange(value),
   });
 
   const cameraSpeed = slider({
     id: 'camera-speed',
     label: 'Camera rotation',
+    hint: 'Slowly spins the view around the dome. You can still drag it at any time.',
     min: 0,
     max: 60,
     step: 1,
-    initialValue: 0,
+    initialValue: DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
     unit: ' °/sec',
+    offAtZero: true,
     onInput: (value) => handlers.onCameraSpeedChange(value),
   });
 
   const pointSize = slider({
     id: 'point-size',
     label: 'Point size',
+    hint: 'Size of the dots. The arc line gets thicker with it.',
     min: 1,
     max: 20,
     step: 1,
@@ -107,24 +121,52 @@ export function mountControlsPanel(
   const surfaceOpacity = slider({
     id: 'surface-opacity',
     label: 'Dome surface',
+    hint: 'Tint of the glass dome. Higher makes it more solid.',
     min: 0,
     max: 100,
     step: 1,
     initialValue: Math.round(DEFAULT_SURFACE_OPACITY * 100),
     unit: '%',
+    offAtZero: true,
     onInput: (value) => handlers.onSurfaceOpacityChange?.(value / 100),
   });
 
   const floorOpacity = slider({
     id: 'floor-opacity',
     label: 'Dome floor',
+    hint: 'Ground disc under the dome that marks the horizon.',
     min: 0,
     max: 100,
     step: 1,
     initialValue: Math.round(DEFAULT_FLOOR_OPACITY * 100),
     unit: '%',
+    offAtZero: true,
     onInput: (value) => handlers.onFloorOpacityChange?.(value / 100),
   });
+
+  // --- timeline scrubber ------------------------------------------------
+
+  const progress = slider({
+    id: 'progress',
+    label: 'Progress',
+    min: 0,
+    max: 0,
+    step: 1,
+    initialValue: 0,
+    unit: '',
+    format: (value, max) => (max === 0 ? 'No frames yet' : `${value} / ${max} frames`),
+    onInput: (value) => handlers.onSeek(value),
+  });
+  progress.range.disabled = true;
+  let scrubbing = false;
+  progress.range.addEventListener('pointerdown', () => {
+    scrubbing = true;
+  });
+  for (const type of ['pointerup', 'pointercancel', 'blur']) {
+    progress.range.addEventListener(type, () => {
+      scrubbing = false;
+    });
+  }
 
   // --- overlay toggles --------------------------------------------------
 
@@ -135,8 +177,10 @@ export function mountControlsPanel(
   root.append(
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Playback & Actions']),
-      primaryRow,
+      playBtn,
+      progress.root,
       secondaryRow,
+      coordsBtn,
     ]),
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Animation']),
@@ -166,6 +210,9 @@ export function mountControlsPanel(
       playBtn.disabled = snapshot.timelineLength === 0;
       resetBtn.disabled = snapshot.revealCount === 0;
       exportBtn.disabled = snapshot.timelineLength === 0;
+      progress.range.disabled = snapshot.timelineLength === 0;
+      progress.range.max = String(snapshot.timelineLength);
+      if (!scrubbing) progress.setValue(snapshot.revealCount);
     },
   };
 }
@@ -178,18 +225,23 @@ interface SliderConfig {
   step: number;
   initialValue: number;
   unit: string;
+  /** Short explanation shown under the label, so the control is self-explanatory. */
+  hint?: string;
+  /** Show "Off" instead of "0<unit>" for controls where zero switches the effect off. */
+  offAtZero?: boolean;
+  /** Custom text for the value label; defaults to the value plus `unit`. */
+  format?: (value: number, max: number) => string;
   onInput: (value: number) => void;
 }
 
 interface SliderHandles {
   root: HTMLElement;
+  range: HTMLInputElement;
   setValue: (value: number) => void;
 }
 
 function slider(config: SliderConfig): SliderHandles {
-  const valueLabel = el('span', { class: 'slider__value' }, [
-    `${config.initialValue}${config.unit}`,
-  ]);
+  const valueLabel = el('span', { class: 'slider__value' });
   const range = el('input', {
     class: 'slider__range',
     type: 'range',
@@ -199,21 +251,37 @@ function slider(config: SliderConfig): SliderHandles {
     step: String(config.step),
     value: String(config.initialValue),
   }) as HTMLInputElement;
-  range.addEventListener('input', () => {
+  const refresh = () => {
     const value = Number(range.value);
-    valueLabel.textContent = `${value}${config.unit}`;
-    config.onInput(value);
+    const text = config.format
+      ? config.format(value, Number(range.max))
+      : config.offAtZero && value === 0
+        ? 'Off'
+        : `${value}${config.unit}`;
+    valueLabel.textContent = text;
+    range.setAttribute('aria-valuetext', text);
+  };
+  refresh();
+  range.addEventListener('input', () => {
+    refresh();
+    config.onInput(Number(range.value));
   });
+  const hint = config.hint
+    ? el('span', { class: 'slider__hint', id: `${config.id}-hint` }, [config.hint])
+    : null;
+  if (hint) range.setAttribute('aria-describedby', hint.id);
   const root = el('div', { class: 'slider' }, [
     el('label', { class: 'slider__label', for: config.id }, [config.label]),
-    range,
     valueLabel,
+    ...(hint ? [hint] : []),
+    range,
   ]);
   return {
     root,
+    range,
     setValue: (value: number) => {
       range.value = String(value);
-      valueLabel.textContent = `${value}${config.unit}`;
+      refresh();
     },
   };
 }

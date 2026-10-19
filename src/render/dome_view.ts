@@ -28,7 +28,11 @@ import { computeAltAz } from '../astro/altaz';
 import { parseFitsDate } from '../astro/date_parse';
 import { computeDomeFraming } from './camera_framing';
 import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
-import { DEFAULT_FLOOR_OPACITY, DEFAULT_SURFACE_OPACITY } from './defaults';
+import {
+  DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
+  DEFAULT_FLOOR_OPACITY,
+  DEFAULT_SURFACE_OPACITY,
+} from './defaults';
 import { buildDomeWireframe } from './dome_geometry';
 import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
 
@@ -48,7 +52,6 @@ export interface DomeViewOptions {
 
 const DEFAULT_INITIAL_ELEVATION_DEG = 15;
 const DEFAULT_INITIAL_AZIMUTH_DEG = 45;
-const DEFAULT_CAMERA_ROTATION_DEG_PER_SEC = 4;
 
 export type InteractionMode = 'orbit' | 'pan';
 
@@ -58,6 +61,8 @@ interface SessionLayer {
   /** Wide, soft additive line underneath the core that gives the arc its glow. */
   glow: Line2 | null;
   dots: THREE.Points;
+  /** Night number at the start of the arc, so nights stay distinguishable without colour. */
+  badge: THREE.Sprite | null;
 }
 
 interface CameraTween {
@@ -111,6 +116,7 @@ export class DomeView {
   private interactionMode: InteractionMode = 'orbit';
   private readonly cameraInteractionListeners = new Set<() => void>();
   private readonly resizeObserver: ResizeObserver;
+  private readonly reducedMotion: boolean;
 
   private readonly dotTexture: THREE.CanvasTexture;
   private readonly ringTexture: THREE.CanvasTexture;
@@ -168,6 +174,18 @@ export class DomeView {
     this.controls.maxDistance = this.radius * 12;
     this.controls.addEventListener('start', this.handleCameraStart);
     this.canvas.addEventListener('dblclick', this.handleDoubleClick);
+
+    this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+
+    // Keyboard access: arrow keys pan the view while the canvas has focus.
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('role', 'application');
+    this.canvas.setAttribute(
+      'aria-label',
+      "3D sky dome showing the target's path across the sky. Arrow keys move the view, plus and minus zoom.",
+    );
+    this.controls.listenToKeyEvents(this.canvas);
+    this.canvas.addEventListener('keydown', this.handleKeyDown);
 
     const wireframe = buildDomeWireframe(this.radius);
     const horizonVertexCount = wireframe.horizonSegments * 2 * 3;
@@ -273,10 +291,10 @@ export class DomeView {
 
     // Cardinal markers along the horizon ring (N, E, S, W)
     const cardinals = [
-      { label: 'N', x: 0, y: this.radius * 1.06, z: 0 },
-      { label: 'E', x: this.radius * 1.06, y: 0, z: 0 },
-      { label: 'S', x: 0, y: -this.radius * 1.06, z: 0 },
-      { label: 'W', x: -this.radius * 1.06, y: 0, z: 0 },
+      { label: 'N', x: 0, y: this.radius * 1.05, z: 0 },
+      { label: 'E', x: this.radius * 1.05, y: 0, z: 0 },
+      { label: 'S', x: 0, y: -this.radius * 1.05, z: 0 },
+      { label: 'W', x: -this.radius * 1.05, y: 0, z: 0 },
     ];
     for (const card of cardinals) {
       const sprite = createCardinalSprite(card.label);
@@ -340,6 +358,13 @@ export class DomeView {
   recenter(): void {
     this.userMovedCamera = false;
     const destination = this.framingDestination(true);
+    if (this.reducedMotion) {
+      this.cameraTween = null;
+      this.controls.target.copy(destination.target);
+      this.camera.position.copy(destination.position);
+      this.camera.lookAt(destination.target);
+      return;
+    }
     this.cameraTween = {
       elapsed: 0,
       duration: RECENTER_SECONDS,
@@ -397,6 +422,18 @@ export class DomeView {
 
   private readonly handleDoubleClick = (): void => {
     this.recenter();
+  };
+
+  private readonly handleKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === '+' || event.key === '=') {
+      this.zoomIn();
+    } else if (event.key === '-' || event.key === '_') {
+      this.zoomOut();
+    } else if (event.key === '0') {
+      this.recenter();
+    } else if (event.key.startsWith('Arrow')) {
+      this.handleCameraStart();
+    }
   };
 
   /** Where the camera should sit to frame the whole dome, optionally keeping the current angle. */
@@ -472,6 +509,11 @@ export class DomeView {
     this.playback.togglePlay();
   }
 
+  /** Jump the reveal to `count` points; the render loop picks the change up. */
+  seek(count: number): void {
+    this.playback.seek(count);
+  }
+
   reset(): void {
     this.playback.reset();
   }
@@ -535,6 +577,8 @@ export class DomeView {
     this.resizeObserver.disconnect();
     this.controls.removeEventListener('start', this.handleCameraStart);
     this.canvas.removeEventListener('dblclick', this.handleDoubleClick);
+    this.canvas.removeEventListener('keydown', this.handleKeyDown);
+    this.controls.stopListenToKeyEvents();
     this.controls.dispose();
     this.wireframeMaterial.dispose();
     this.horizonMaterial.dispose();
@@ -590,7 +634,9 @@ export class DomeView {
   }
 
   private pulseMarker(seconds: number): void {
-    const pulse = 1 + 0.12 * Math.sin(seconds * 2 * Math.PI * MARKER_PULSE_HZ);
+    const pulse = this.reducedMotion
+      ? 1
+      : 1 + 0.12 * Math.sin(seconds * 2 * Math.PI * MARKER_PULSE_HZ);
     this.currentMarkerMaterial.size = this.pointSize * 2.8 * pulse;
     this.markerHaloMaterial.size = this.pointSize * 7 * pulse;
   }
@@ -632,6 +678,11 @@ export class DomeView {
       this.domeGroup.remove(layer.dots);
       layer.dots.geometry.dispose();
       (layer.dots.material as THREE.Material).dispose();
+      if (layer.badge) {
+        this.domeGroup.remove(layer.badge);
+        layer.badge.material.map?.dispose();
+        layer.badge.material.dispose();
+      }
     }
     this.layers.clear();
   }
@@ -693,7 +744,15 @@ export class DomeView {
       });
       const dots = new THREE.Points(dotsGeometry, dotsMaterial);
       this.domeGroup.add(dots);
-      this.layers.set(i, { core, glow, dots });
+
+      let badge: THREE.Sprite | null = null;
+      if (project.sessions.length > 1 && flat.length >= 3) {
+        badge = createNightBadge(i + 1, session.color);
+        badge.position.set(flat[0]!, flat[1]!, flat[2]! + this.radius * 0.07);
+        badge.visible = false;
+        this.domeGroup.add(badge);
+      }
+      this.layers.set(i, { core, glow, dots, badge });
     }
 
     this.updateRevealedPoints(0);
@@ -712,6 +771,7 @@ export class DomeView {
     for (const [sessionIndex, layer] of this.layers) {
       const count = sessionPointCounts.get(sessionIndex) ?? 0;
       layer.dots.geometry.setDrawRange(0, count);
+      if (layer.badge) layer.badge.visible = count > 0;
       for (const line of [layer.core, layer.glow]) {
         if (line) line.geometry.instanceCount = Math.max(0, count - 1);
       }
@@ -830,26 +890,56 @@ function createRingTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-function createCardinalSprite(label: string): THREE.Sprite {
+function createNightBadge(night: number, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
+  canvas.width = 96;
+  canvas.height = 96;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(48, 48, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(8, 10, 18, 0.9)';
+    ctx.stroke();
+    ctx.fillStyle = 'rgb(8, 10, 18)';
+    ctx.font = "700 46px 'Inter', system-ui, sans-serif";
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(130, 165, 215, 0.85)';
-    ctx.fillText(label, 32, 32);
+    ctx.fillText(String(night), 48, 51);
+  }
+  const material = new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(canvas),
+    transparent: true,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.05, 1.05, 1.05);
+  return sprite;
+}
+
+function createCardinalSprite(label: string): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.font = "600 60px 'Inter', system-ui, -apple-system, sans-serif";
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // North is the reference direction, so it is the only accented label.
+    ctx.fillStyle = label === 'N' ? 'rgb(79, 195, 247)' : 'rgb(168, 184, 212)';
+    ctx.fillText(label, 64, 66);
   }
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.8,
     depthTest: false,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.4, 1.4, 1.4);
+  sprite.scale.set(1.35, 1.35, 1.35);
   return sprite;
 }

@@ -41,20 +41,23 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 - **True Horizontal Coordinates**: Interactive 3D celestial dome with 15° altitude rings and 30° azimuth meridians.
 - **Cardinal Direction Markers**: Integrated **N**, **E**, **S**, and **W** indicators aligned with the horizon.
 - **Customizable Dome Appearance**: Real-time sliders for **Dome Surface Opacity** (translucent celestial glass volume) and **Dome Floor Opacity** (terrestrial ground circle).
-- **Cinematic Controls**: Smooth orbit, pitch, and zoom camera controls, paired with automated turntable rotation (`°/sec`).
+- **Always Framed**: The dome stays centred and fully in view at any window size. Zoom, a move (pan) mode and a one-click recenter sit over the canvas; double-click also recenters.
+- **Cinematic Controls**: Smooth orbit, pitch, and zoom camera controls, plus an automated turntable rotation (`°/sec`, a gentle 1°/sec by default; set it to 0 to keep the camera still).
+- **Timeline Scrubber**: Drag the Progress slider to jump to any frame of the animation.
 
 ### 📅 Multi-Night Session Management
 
 - **Organize by Night**: Group subframes into distinct capture sessions (e.g. "Night 1", "Night 2").
-- **Custom Palette Coding**: Assign unique colors to each session to visually distinguish target tracks across different dates.
+- **Custom Palette Coding**: Assign unique colors to each session to visually distinguish target tracks across different dates. Numbered badges at the start of each arc keep nights distinguishable without relying on color.
 - **Drag & Drop**: Drag entire folder trees or individual `.fits`, `.fit`, or `.fts` files directly onto the central 3D canvas.
 - **Manual Coordinates Fallback**: Built-in dialog to provide manual target coordinates (RA/Dec) or observatory site location (Lat/Lon) if your camera software didn't populate them. Coordinates persist automatically across browser visits.
+- **Clear Feedback**: Notifications confirm what was added and flag files that aren't FITS or whose headers lack a date, target or site, with a shortcut to the coordinates dialog.
+- **Phone & Tablet Friendly**: On narrow screens the dome fills the display and the sessions and controls become slide-over drawers.
 
 ### 📊 Real-Time Telemetry HUD (Overlays)
 
-- **Accumulated Integration Counter**: Top-left digital badge showing cumulative exposure duration (`Xh YYm`).
-- **Session Telemetry Panel**: Live statistics showing subframe count, processed data volume (GB), observation date, and session sequence.
-- **16-Hour Altitude Mini-Chart**: Bottom-right HUD tracking the target's altitude curve across the session window, with 30° and 60° reference lines and a real-time tracking dot.
+- **Accumulated Integration Counter and Stats**: One top-left panel showing cumulative exposure duration (`Xh YYm`), subframe count, processed data volume (GB), observation date, and session sequence.
+- **Altitude Chart**: Bottom-right HUD showing how high the target climbs over the whole imaging night, with a shaded band for the time you actually imaged, a UTC time axis, 30° and 60° reference lines and a dot that follows the animation.
 - **Independent Toggles**: Master overlay switch and independent visibility toggles for each HUD element.
 
 ### 🎥 Deterministic Video Export
@@ -86,7 +89,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (20 suites, 145 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (23 suites, 184 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 
 ### Coordinate System & Astronomical Transforms
@@ -152,7 +155,7 @@ src/
 ├── model/      # Data models (LightFrame, Session, Project), fallback resolution & timeline
 ├── render/     # Three.js 3D hemisphere wireframe, materials, camera & playback controller
 └── ui/         # Session manager, controls panel, overlay telemetry HUD & dialogs
-tests/          # Comprehensive Vitest test suites (145 tests)
+tests/          # Comprehensive Vitest test suites (184 tests)
 ```
 
 ---

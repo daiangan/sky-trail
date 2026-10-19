@@ -26,6 +26,7 @@ import {
 import { formatDuration } from '../model/timeline';
 import { clear, confirm, el } from './dom';
 import { hasFitsExtension, pickDirectory, pickFiles, readLightBatches } from './file_io';
+import { reportIngestFailure, reportIngestSuccess, reportNoFitsFiles } from './ingest_feedback';
 import type { Store } from './store';
 
 export interface OverlayVisibility {
@@ -93,7 +94,7 @@ function renderList(host: HTMLElement, state: AppState, store: Store<AppState>):
     clear(host);
     host.appendChild(
       el('p', { class: 'session-list__empty' }, [
-        'No sessions yet. Click "+ New session" to start.',
+        'Your capture nights will appear here. Drop FITS files to start the first one.',
       ]),
     );
     return;
@@ -132,7 +133,10 @@ function buildRow(
   const row = el('div', {
     class: `session-row${isSelected ? ' session-row--selected' : ''}`,
     dataset: { sessionId: String(index) },
-    role: 'button',
+    // A group, not a button: the row contains its own controls (colour, name, move, delete).
+    role: 'group',
+    'aria-label': session.name,
+    'aria-current': isSelected ? 'true' : undefined,
     tabindex: '0',
   });
 
@@ -178,7 +182,7 @@ function buildRow(
   ]);
   const dateText = sessionDate(session);
   const date = el('span', { class: 'session-row__date' }, [dateText ? dateText.slice(0, 10) : '—']);
-  summary.append(count, ' · ', exptime, ' · ', date);
+  summary.append(count, ' · ', exptime, date);
 
   const upBtn = el(
     'button',
@@ -253,6 +257,9 @@ function updateRow(
 ): void {
   const isSelected = state.selectedSessionId === index;
   row.classList.toggle('session-row--selected', isSelected);
+  if (isSelected) row.setAttribute('aria-current', 'true');
+  else row.removeAttribute('aria-current');
+  row.setAttribute('aria-label', session.name);
 
   const swatch = row.querySelector<HTMLInputElement>('.session-row__swatch');
   if (swatch && swatch.value !== session.color) swatch.value = session.color;
@@ -367,17 +374,32 @@ async function runPick(
   picker: () => Promise<{ files: File[] } | null>,
   store: Store<AppState>,
 ): Promise<void> {
-  const pickResult = await picker();
-  if (!pickResult || pickResult.files.length === 0) return;
+  let pickResult;
+  try {
+    pickResult = await picker();
+  } catch (error) {
+    reportIngestFailure(store, error);
+    return;
+  }
+  if (!pickResult) return;
 
   const files = pickResult.files.filter((file) => hasFitsExtension(file.name));
-  if (files.length === 0) return;
+  if (files.length === 0) {
+    reportNoFitsFiles();
+    return;
+  }
 
-  const infos = await readLightBatches(files, {
-    onProgress: (current, total, fileName) => {
-      store.set((s) => ({ ...s, loading: { current, total, fileName } }));
-    },
-  });
+  let infos;
+  try {
+    infos = await readLightBatches(files, {
+      onProgress: (current, total, fileName) => {
+        store.set((s) => ({ ...s, loading: { current, total, fileName } }));
+      },
+    });
+  } catch (error) {
+    reportIngestFailure(store, error);
+    return;
+  }
 
   store.set((s) => {
     let project = s.project;
@@ -391,7 +413,7 @@ async function runPick(
     }
 
     const session = project.sessions[targetIndex];
-    if (!session) return s;
+    if (!session) return { ...s, loading: null };
     let next = session;
     for (let i = 0; i < files.length; i += 1) {
       next = addLight(next, lightFrameFromInfo(infos[i]!, files[i]!.name));
@@ -403,6 +425,7 @@ async function runPick(
       loading: null,
     };
   });
+  reportIngestSuccess(store, files.length);
 }
 
 export function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {

@@ -41,6 +41,32 @@ describe('buildTimeline', () => {
     expect(points[2]?.light.dateObs).toBe('2026-01-01T20:10:00Z');
   });
 
+  it('orders by the parsed instant when DATE-OBS spellings are mixed', () => {
+    // As plain text these sort wrongly: ' ' < 'T', and an offset or 'Z' changes the instant.
+    const frames = [
+      light(0, { path: '/space.fits', dateObs: '2026-01-01 20:00:00' }), // 20:00:00Z
+      light(1, { path: '/naive.fits', dateObs: '2026-01-01T19:59:30' }), // 19:59:30Z
+      light(2, { path: '/offset.fits', dateObs: '2026-01-01T20:30:00+01:00' }), // 19:30:00Z
+      light(3, { path: '/fraction.fits', dateObs: '2026-01-01T20:00:00.500Z' }), // 20:00:00.5Z
+    ];
+    let session = createSession(0);
+    for (const frame of frames) session = addLight(session, frame);
+    const project = addSession(createProject(), session);
+
+    const order = buildTimeline(project, PASS_THROUGH_ALTAZ).map((point) => point.light.path);
+    expect(order).toEqual(['/offset.fits', '/naive.fits', '/space.fits', '/fraction.fits']);
+  });
+
+  it('keeps assignment order for frames with the same instant', () => {
+    let session = createSession(0);
+    session = addLight(session, light(0, { path: '/a.fits', dateObs: '2026-01-01T20:00:00Z' }));
+    session = addLight(session, light(1, { path: '/b.fits', dateObs: '2026-01-01 20:00:00' }));
+    const project = addSession(createProject(), session);
+
+    const order = buildTimeline(project, PASS_THROUGH_ALTAZ).map((point) => point.light.path);
+    expect(order).toEqual(['/a.fits', '/b.fits']);
+  });
+
   it('accumulates exptime, subframes, and bytes', () => {
     let s1 = createSession(0);
     s1 = addLight(s1, light(0, { exptime: 60, sizeBytes: 1_000_000 }));
