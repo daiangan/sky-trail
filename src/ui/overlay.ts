@@ -27,6 +27,7 @@ import {
   type AltitudeChartData,
 } from './altitude_chart';
 import { parseFitsDate } from '../astro/date_parse';
+import { announce } from './announce';
 import { roundRect } from './canvas_utils';
 import { clear, el } from './dom';
 
@@ -83,10 +84,13 @@ export function mountOverlay(
   let cachedChartKey: string | null = null;
   let cachedChartBase: ChartBase | null = null;
   let lastTimeline: TimelinePoint[] = [];
+  let lastProject: AppState['project'] | null = null;
   let currentVisibility: OverlayVisibility = store.get().overlay;
   let currentSnapshot: OverlaySnapshot = emptySnapshot(currentVisibility);
   let hasPoint = false;
   let hasChart = false;
+  let announcedNight: number | null = null;
+  let announcedFinish = false;
 
   const drawLiveChart = (chart: AltitudeChartData | null) => {
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -95,13 +99,11 @@ export function mountOverlay(
   };
 
   const recompute = (state: AppState) => {
-    if (lastTimeline.length === 0 && state.project.sessions.length > 0) {
-      lastTimeline = buildTimeline(state.project);
-    } else if (state.project.sessions.length === 0) {
-      lastTimeline = [];
-    }
-    if (!arraysMatchTimeline(lastTimeline, state)) {
-      lastTimeline = buildTimeline(state.project);
+    // The project is immutable, so a new object means lights, sessions or
+    // colours changed and the cached timeline and chart are stale.
+    if (state.project !== lastProject) {
+      lastProject = state.project;
+      lastTimeline = state.project.sessions.length > 0 ? buildTimeline(state.project) : [];
       cachedChartKey = null;
       cachedChartBase = null;
     }
@@ -125,6 +127,8 @@ export function mountOverlay(
     drawLiveChart(chart);
 
     if (!point) {
+      announcedNight = null;
+      announcedFinish = false;
       counter.textContent = formatDuration(0);
       stats.replaceChildren();
       currentSnapshot = {
@@ -135,6 +139,17 @@ export function mountOverlay(
       };
       return;
     }
+
+    if (playback.isPlaying && point.nightIndex !== announcedNight) {
+      announce(`Night ${point.nightIndex} of ${point.totalNights}`);
+    }
+    announcedNight = point.nightIndex;
+    if (playback.isFinished && !announcedFinish) {
+      announce(
+        `Animation complete: ${formatDuration(point.cumulativeExptimeS)} across ${point.cumulativeSubframes} subframes.`,
+      );
+    }
+    announcedFinish = playback.isFinished;
 
     counter.textContent = formatDuration(point.cumulativeExptimeS);
     const statsLines = [
@@ -282,17 +297,6 @@ function applyVisibility(
   if (chart) {
     chart.style.display = visibility.visible && visibility.chart && hasChart ? 'block' : 'none';
   }
-}
-
-function arraysMatchTimeline(timeline: TimelinePoint[], state: AppState): boolean {
-  const sessions = state.project.sessions;
-  if (timeline.length === 0) return sessions.length === 0;
-  let lights = 0;
-  for (const s of sessions) lights += s.lights.length;
-  return (
-    sessions.length === (timeline[timeline.length - 1]?.totalNights ?? 0) &&
-    lights >= timeline.length
-  );
 }
 
 /** The night's whole altitude curve, or null when the light lacks target, site or date. */

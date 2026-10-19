@@ -25,6 +25,7 @@ export interface ControlsPanelHandlers {
   onSurfaceOpacityChange?: (value: number) => void;
   onFloorOpacityChange?: (value: number) => void;
   onPlayPause: () => void;
+  onSeek: (revealCount: number) => void;
   onReset: () => void;
   onCoordinates: () => void;
   onExport: () => void;
@@ -131,6 +132,30 @@ export function mountControlsPanel(
     onInput: (value) => handlers.onFloorOpacityChange?.(value / 100),
   });
 
+  // --- timeline scrubber ------------------------------------------------
+
+  const progress = slider({
+    id: 'progress',
+    label: 'Progress',
+    min: 0,
+    max: 0,
+    step: 1,
+    initialValue: 0,
+    unit: '',
+    format: (value, max) => (max === 0 ? 'No frames yet' : `${value} / ${max} frames`),
+    onInput: (value) => handlers.onSeek(value),
+  });
+  progress.range.disabled = true;
+  let scrubbing = false;
+  progress.range.addEventListener('pointerdown', () => {
+    scrubbing = true;
+  });
+  for (const type of ['pointerup', 'pointercancel', 'blur']) {
+    progress.range.addEventListener(type, () => {
+      scrubbing = false;
+    });
+  }
+
   // --- overlay toggles --------------------------------------------------
 
   const overlayToggle = overlayToggles(store.get().overlay, (visibility) => {
@@ -141,6 +166,7 @@ export function mountControlsPanel(
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Playback & Actions']),
       playBtn,
+      progress.root,
       secondaryRow,
       coordsBtn,
     ]),
@@ -172,6 +198,9 @@ export function mountControlsPanel(
       playBtn.disabled = snapshot.timelineLength === 0;
       resetBtn.disabled = snapshot.revealCount === 0;
       exportBtn.disabled = snapshot.timelineLength === 0;
+      progress.range.disabled = snapshot.timelineLength === 0;
+      progress.range.max = String(snapshot.timelineLength);
+      if (!scrubbing) progress.setValue(snapshot.revealCount);
     },
   };
 }
@@ -184,18 +213,19 @@ interface SliderConfig {
   step: number;
   initialValue: number;
   unit: string;
+  /** Custom text for the value label; defaults to the value plus `unit`. */
+  format?: (value: number, max: number) => string;
   onInput: (value: number) => void;
 }
 
 interface SliderHandles {
   root: HTMLElement;
+  range: HTMLInputElement;
   setValue: (value: number) => void;
 }
 
 function slider(config: SliderConfig): SliderHandles {
-  const valueLabel = el('span', { class: 'slider__value' }, [
-    `${config.initialValue}${config.unit}`,
-  ]);
+  const valueLabel = el('span', { class: 'slider__value' });
   const range = el('input', {
     class: 'slider__range',
     type: 'range',
@@ -205,10 +235,16 @@ function slider(config: SliderConfig): SliderHandles {
     step: String(config.step),
     value: String(config.initialValue),
   }) as HTMLInputElement;
-  range.addEventListener('input', () => {
+  const refresh = () => {
     const value = Number(range.value);
-    valueLabel.textContent = `${value}${config.unit}`;
-    config.onInput(value);
+    const text = config.format ? config.format(value, Number(range.max)) : `${value}${config.unit}`;
+    valueLabel.textContent = text;
+    range.setAttribute('aria-valuetext', text);
+  };
+  refresh();
+  range.addEventListener('input', () => {
+    refresh();
+    config.onInput(Number(range.value));
   });
   const root = el('div', { class: 'slider' }, [
     el('label', { class: 'slider__label', for: config.id }, [config.label]),
@@ -217,9 +253,10 @@ function slider(config: SliderConfig): SliderHandles {
   ]);
   return {
     root,
+    range,
     setValue: (value: number) => {
       range.value = String(value);
-      valueLabel.textContent = `${value}${config.unit}`;
+      refresh();
     },
   };
 }

@@ -10,7 +10,9 @@ import { mountControlsPanel } from './ui/controls_panel';
 import { mountExportDialog } from './ui/export_dialog';
 import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
+import { mountMobileLayout } from './ui/mobile_layout';
 import { mountViewToolbar } from './ui/view_toolbar';
+import { reportIngestFailure, setCoordinatesOpener } from './ui/ingest_feedback';
 import { Store } from './ui/store';
 import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
@@ -112,27 +114,35 @@ const domeView = new DomeView({
 });
 
 mountViewToolbar(canvasArea, domeView);
+mountMobileLayout({
+  layout,
+  canvasArea,
+  sessionsPanel: sessionPanel,
+  controlsPanel: controlsArea,
+  store,
+  onPlayPause: () => domeView.togglePlay(),
+});
 mountSessionPanel(sessionPanel, store);
 const overlay = mountOverlay(overlayLayer, store);
+
+async function pickAndIngest(picker: () => Promise<{ files: File[] } | null>): Promise<void> {
+  try {
+    const picked = await picker();
+    if (picked) await ingestFiles(picked.files, store);
+  } catch (error) {
+    reportIngestFailure(store, error);
+  }
+}
 
 setupDragAndDrop({
   canvasArea,
   store,
-  onPickFolder: async () => {
-    const res = await pickDirectory();
-    if (res && res.files.length > 0) {
-      await ingestFiles(res.files, store);
-    }
-  },
-  onPickFiles: async () => {
-    const res = await pickFiles();
-    if (res && res.files.length > 0) {
-      await ingestFiles(res.files, store);
-    }
-  },
+  onPickFolder: () => pickAndIngest(pickDirectory),
+  onPickFiles: () => pickAndIngest(pickFiles),
 });
 
 const coordinatesDialog = mountCoordinatesDialog(coordinatesDialogRoot, store);
+setCoordinatesOpener(() => coordinatesDialog.open());
 const exportDialog = mountExportDialog(exportDialogRoot);
 const videoExporter = new VideoExporter(domeView, overlay.getSnapshot);
 
@@ -143,6 +153,7 @@ const controlsApi = mountControlsPanel(controlsArea, store, {
   onSurfaceOpacityChange: (value) => domeView.setSurfaceOpacity(value),
   onFloorOpacityChange: (value) => domeView.setFloorOpacity(value),
   onPlayPause: () => domeView.togglePlay(),
+  onSeek: (value) => domeView.seek(value),
   onReset: () => domeView.reset(),
   onCoordinates: () => coordinatesDialog.open(),
   onExport: () => {

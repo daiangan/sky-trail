@@ -11,6 +11,7 @@ import { hasFitsExtension, readLightBatches } from './file_io';
 import { clear, el } from './dom';
 import { addLight, createSession } from '../model/session';
 import { addSession } from '../model/project';
+import { reportIngestFailure, reportIngestSuccess, reportNoFitsFiles } from './ingest_feedback';
 import { lightFrameFromInfo, type AppState } from './session_panel';
 import type { Store } from './store';
 
@@ -51,6 +52,9 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
       el('p', { class: 'canvas-empty-state__desc' }, [
         'Drag and drop your FITS light frames or folder directly here to generate the 3D sky dome animation. Files never leave your browser.',
       ]),
+      el('p', { class: 'canvas-empty-state__hint' }, [
+        'Works with FITS lights from N.I.N.A., ASIAIR, KStars/Ekos, SharpCap, Siril and more. Only the header is read: date, exposure, target and site.',
+      ]),
       el('div', { class: 'canvas-empty-state__actions' }, [
         el('button', { class: 'btn btn--primary', type: 'button', id: 'empty-pick-folder' }, [
           'Select Folder…',
@@ -74,6 +78,8 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
   const updateEmptyState = (state: AppState) => {
     const totalLights = state.project.sessions.reduce((acc, s) => acc + s.lights.length, 0);
     emptyStateHero.style.display = totalLights === 0 ? 'flex' : 'none';
+    // Nothing to show yet: hide the HUD, chart and view controls behind the welcome card.
+    canvasArea.classList.toggle('app-layout__canvas--empty', totalLights === 0);
   };
   updateEmptyState(store.get());
   const unsubscribe = store.subscribe(updateEmptyState);
@@ -110,8 +116,6 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
 
     if (!e.dataTransfer) return;
     const files = await extractFilesFromDrop(e.dataTransfer);
-    if (files.length === 0) return;
-
     await ingestFiles(files, store);
   };
 
@@ -135,13 +139,22 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
 
 export async function ingestFiles(files: File[], store: Store<AppState>): Promise<void> {
   const fitsFiles = files.filter((f) => hasFitsExtension(f.name));
-  if (fitsFiles.length === 0) return;
+  if (fitsFiles.length === 0) {
+    reportNoFitsFiles();
+    return;
+  }
 
-  const infos = await readLightBatches(fitsFiles, {
-    onProgress: (current, total, fileName) => {
-      store.set((s) => ({ ...s, loading: { current, total, fileName } }));
-    },
-  });
+  let infos;
+  try {
+    infos = await readLightBatches(fitsFiles, {
+      onProgress: (current, total, fileName) => {
+        store.set((s) => ({ ...s, loading: { current, total, fileName } }));
+      },
+    });
+  } catch (error) {
+    reportIngestFailure(store, error);
+    return;
+  }
 
   store.set((s) => {
     let project = s.project;
@@ -157,7 +170,7 @@ export async function ingestFiles(files: File[], store: Store<AppState>): Promis
     }
 
     const session = project.sessions[selectedId];
-    if (!session) return s;
+    if (!session) return { ...s, loading: null };
 
     let updatedSession = session;
     for (let i = 0; i < fitsFiles.length; i += 1) {
@@ -175,6 +188,7 @@ export async function ingestFiles(files: File[], store: Store<AppState>): Promis
       loading: null,
     };
   });
+  reportIngestSuccess(store, fitsFiles.length);
 }
 
 async function extractFilesFromDrop(dataTransfer: DataTransfer): Promise<File[]> {
