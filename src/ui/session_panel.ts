@@ -178,7 +178,7 @@ function buildRow(
   ]);
   const dateText = sessionDate(session);
   const date = el('span', { class: 'session-row__date' }, [dateText ? dateText.slice(0, 10) : '—']);
-  summary.append(count, ' · ', exptime, ' · ', date);
+  summary.append(count, ' · ', exptime, date);
 
   const upBtn = el(
     'button',

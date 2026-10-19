@@ -44,29 +44,34 @@ export function mountControlsPanel(
 
   // --- top action buttons -----------------------------------------------
 
-  const playBtn = el('button', { class: 'btn btn--primary', id: 'play-btn', type: 'button' }, [
-    '▶ Play',
-  ]);
-  const exportBtn = el('button', { class: 'btn btn--export', id: 'export-btn', type: 'button' }, [
-    'Export Video…',
+  const playBtn = el(
+    'button',
+    { class: 'btn btn--primary btn--large', id: 'play-btn', type: 'button' },
+    ['▶ Play'],
+  );
+  const exportBtn = el('button', { class: 'btn btn--outline', id: 'export-btn', type: 'button' }, [
+    'Export video…',
   ]);
   playBtn.addEventListener('click', () => handlers.onPlayPause());
   exportBtn.addEventListener('click', () => handlers.onExport());
 
   const resetBtn = el('button', { class: 'btn', id: 'reset-btn', type: 'button' }, ['↺ Reset']);
-  const coordsBtn = el('button', { class: 'btn', id: 'coords-btn', type: 'button' }, [
-    'Object Coordinates…',
-  ]);
+  const coordsBtn = el(
+    'button',
+    {
+      class: 'btn btn--ghost',
+      id: 'coords-btn',
+      type: 'button',
+      title: 'Set the target and observing site manually when the FITS headers lack them',
+    },
+    ['Target & site coordinates…'],
+  );
   resetBtn.addEventListener('click', () => handlers.onReset());
   coordsBtn.addEventListener('click', () => handlers.onCoordinates());
 
-  const primaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
-    playBtn,
-    exportBtn,
-  ]);
   const secondaryRow = el('div', { class: 'controls__row controls__row--buttons' }, [
     resetBtn,
-    coordsBtn,
+    exportBtn,
   ]);
 
   // --- sliders ----------------------------------------------------------
@@ -135,8 +140,9 @@ export function mountControlsPanel(
   root.append(
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Playback & Actions']),
-      primaryRow,
+      playBtn,
       secondaryRow,
+      coordsBtn,
     ]),
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Animation']),

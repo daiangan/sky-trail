@@ -273,10 +273,10 @@ export class DomeView {
 
     // Cardinal markers along the horizon ring (N, E, S, W)
     const cardinals = [
-      { label: 'N', x: 0, y: this.radius * 1.06, z: 0 },
-      { label: 'E', x: this.radius * 1.06, y: 0, z: 0 },
-      { label: 'S', x: 0, y: -this.radius * 1.06, z: 0 },
-      { label: 'W', x: -this.radius * 1.06, y: 0, z: 0 },
+      { label: 'N', x: 0, y: this.radius * 1.05, z: 0 },
+      { label: 'E', x: this.radius * 1.05, y: 0, z: 0 },
+      { label: 'S', x: 0, y: -this.radius * 1.05, z: 0 },
+      { label: 'W', x: -this.radius * 1.05, y: 0, z: 0 },
     ];
     for (const card of cardinals) {
       const sprite = createCardinalSprite(card.label);
@@ -832,24 +832,25 @@ function createRingTexture(): THREE.CanvasTexture {
 
 function createCardinalSprite(label: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
+  canvas.width = 128;
+  canvas.height = 128;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.font = 'bold 36px system-ui, -apple-system, sans-serif';
+    ctx.font = "600 60px 'Inter', system-ui, -apple-system, sans-serif";
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(130, 165, 215, 0.85)';
-    ctx.fillText(label, 32, 32);
+    // North is the reference direction, so it is the only accented label.
+    ctx.fillStyle = label === 'N' ? 'rgb(79, 195, 247)' : 'rgb(168, 184, 212)';
+    ctx.fillText(label, 64, 66);
   }
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.8,
     depthTest: false,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(1.4, 1.4, 1.4);
+  sprite.scale.set(1.35, 1.35, 1.35);
   return sprite;
 }

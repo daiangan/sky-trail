@@ -7,8 +7,8 @@
   --border: rgba(120, 132, 158, 0.18);
   --border-strong: rgba(120, 132, 158, 0.35);
   --fg: rgb(220, 226, 240);
-  --fg-dim: rgb(150, 158, 178);
-  --fg-faint: rgb(96, 104, 124);
+  --fg-dim: rgb(172, 180, 200);
+  --fg-faint: rgb(134, 143, 165);
   --accent: rgb(79, 195, 247);
   --danger: rgb(239, 83, 80);
   --radius: 8px;
@@ -165,49 +165,64 @@ body {
   font-family: inherit;
 }
 
-.overlay__counter {
+.overlay__hud {
   position: absolute;
   top: 1rem;
   left: 1rem;
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--fg);
-  padding: 0.5rem 1rem;
-  background: rgba(8, 10, 18, 0.55);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  width: 204px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(8, 10, 18, 0.62);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  min-width: 8rem;
+  overflow: hidden;
+}
+
+.overlay__counter {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
+  font-size: 1.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
 }
 
 .overlay__stats {
-  position: absolute;
-  top: 4.5rem;
-  left: 1rem;
-  font-size: 0.75rem;
-  color: var(--fg-dim);
-  padding: 0.625rem 0.875rem;
-  background: rgba(8, 10, 18, 0.55);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  min-width: 8rem;
-  display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  padding: 12px 1rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.overlay__counter + .overlay__stats {
+  border-top: 1px solid var(--border);
+}
+
+.overlay__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  height: 21px;
 }
 
 .overlay__label {
-  display: inline-block;
-  color: var(--fg-faint);
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.625rem;
-  margin-right: 0.25rem;
+  font-size: 0.6875rem;
+}
+
+.overlay__value {
+  font-variant-numeric: tabular-nums;
 }
 
 .overlay__chart-wrap {
@@ -415,8 +430,9 @@ body {
 
 .session-row__summary {
   display: flex;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
 }
 
@@ -424,6 +440,11 @@ body {
 .session-row__time,
 .session-row__date {
   white-space: nowrap;
+}
+
+/* The date sits on its own line so the row never clips against the action buttons. */
+.session-row__date {
+  flex-basis: 100%;
 }
 
 .iconbtn {
@@ -472,7 +493,7 @@ body {
 }
 
 .session-actions__hint {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
   margin: 0;
 }
@@ -483,8 +504,8 @@ body {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem 0.875rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   color: var(--fg);
   font-size: 0.875rem;
@@ -495,8 +516,13 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(172, 180, 200, 0.55);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .btn:disabled {
@@ -516,22 +542,36 @@ body {
   border-color: rgb(105, 205, 247);
 }
 
-.btn--export {
-  background: linear-gradient(135deg, rgb(79, 195, 247) 0%, rgb(40, 160, 235) 100%);
-  border-color: var(--accent);
-  color: rgb(8, 10, 18);
-  font-weight: 600;
-  box-shadow: 0 0 12px rgba(79, 195, 247, 0.25);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+.btn--large {
+  padding: 0.7rem 1rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  box-shadow: 0 0 16px rgba(79, 195, 247, 0.22);
 }
 
-.btn--export:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgb(115, 215, 255) 0%, rgb(60, 180, 250) 100%);
-  border-color: rgb(115, 215, 255);
-  box-shadow: 0 0 16px rgba(79, 195, 247, 0.45);
+/* Secondary action that still reads as important: outlined, not filled. */
+.btn--outline {
+  background: rgba(79, 195, 247, 0.08);
+  border-color: rgba(79, 195, 247, 0.55);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn--outline:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.18);
+  border-color: var(--accent);
+}
+
+/* Low-emphasis action, full width so its label is never clipped. */
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-dim);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
 }
 
 .session-progress__inner {
@@ -554,7 +594,7 @@ body {
 }
 
 .session-progress__text {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   color: var(--fg-faint);
   letter-spacing: 0.04em;
 }
@@ -612,7 +652,7 @@ body {
 }
 
 .slider__value {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--fg);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -728,7 +768,7 @@ body {
 }
 
 .dialog__subtitle {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--fg-faint);
   margin: 0;
 }
@@ -755,7 +795,7 @@ body {
 }
 
 .dialog__section-title {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--fg-faint);
