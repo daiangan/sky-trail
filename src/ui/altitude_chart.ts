@@ -113,7 +113,7 @@ export interface AltitudeChartStyle {
   curveColor?: string;
 }
 
-const PLOT = { left: 32, right: 12, top: 44, bottom: 24 };
+const PLOT = { left: 34, right: 12, top: 46, bottom: 24 };
 
 export function drawAltitudeChart(
   ctx: CanvasRenderingContext2D,
@@ -152,10 +152,10 @@ export function drawAltitudeChart(
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = dimTextColor;
-  ctx.font = "600 10px 'Inter', system-ui, sans-serif";
+  ctx.font = "600 11px 'Inter', system-ui, sans-serif";
   ctx.fillText(`ALTITUDE · ${data.title.toUpperCase()}`, 12, 11);
-  ctx.font = "9px 'Inter', system-ui, sans-serif";
-  ctx.fillText('Shaded = imaging time', 12, 26);
+  ctx.font = "10px 'Inter', system-ui, sans-serif";
+  ctx.fillText('Shaded = imaging time', 12, 27);
 
   const currentAlt = data.currentMs === null ? null : altitudeAt(data, data.currentMs);
   ctx.textAlign = 'right';
@@ -164,7 +164,7 @@ export function drawAltitudeChart(
   ctx.fillText(currentAlt === null ? '—' : `${Math.round(currentAlt)}°`, width - 12, 8);
 
   // Horizontal grid + altitude labels.
-  ctx.font = "9px 'Inter', system-ui, sans-serif";
+  ctx.font = "10px 'Inter', system-ui, sans-serif";
   ctx.textBaseline = 'middle';
   for (const alt of [0, 30, 60, MAX_ALTITUDE_DEG]) {
     const y = yOf(alt);
