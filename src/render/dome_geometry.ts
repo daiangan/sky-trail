@@ -26,6 +26,8 @@ export interface DomeWireframe {
   positions: Float32Array;
   ringSegments: number;
   meridianSegments: number;
+  /** Segments of the horizon ring (alt = 0), which come first in `positions`. */
+  horizonSegments: number;
 }
 
 export function buildDomeWireframe(radius: number = DOME_RADIUS): DomeWireframe {
@@ -54,7 +56,7 @@ export function buildDomeWireframe(radius: number = DOME_RADIUS): DomeWireframe 
     }
   }
 
-  return { positions, ringSegments, meridianSegments };
+  return { positions, ringSegments, meridianSegments, horizonSegments: DOME_RING_SAMPLES };
 }
 
 function writeSegment(

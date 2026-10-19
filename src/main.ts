@@ -10,6 +10,7 @@ import { mountControlsPanel } from './ui/controls_panel';
 import { mountExportDialog } from './ui/export_dialog';
 import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
+import { mountViewToolbar } from './ui/view_toolbar';
 import { Store } from './ui/store';
 import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
@@ -110,6 +111,7 @@ const domeView = new DomeView({
   },
 });
 
+mountViewToolbar(canvasArea, domeView);
 mountSessionPanel(sessionPanel, store);
 const overlay = mountOverlay(overlayLayer, store);
 
