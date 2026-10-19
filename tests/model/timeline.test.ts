@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { LightFrame } from '../../src/model/light_frame';
 import { addSession, createProject } from '../../src/model/project';
 import { addLight, createSession } from '../../src/model/session';
-import { buildTimeline, formatDuration, formatGb, type AltAzFn } from '../../src/model/timeline';
+import {
+  buildTimeline,
+  formatDuration,
+  formatDataSize,
+  type AltAzFn,
+} from '../../src/model/timeline';
 
 function light(minute: number, overrides: Partial<LightFrame> = {}): LightFrame {
   return {
@@ -162,19 +167,31 @@ describe('formatDuration', () => {
   });
 });
 
-describe('formatGb', () => {
-  it('formats one gibibyte with two decimals', () => {
-    expect(formatGb(1024 ** 3)).toBe('1.00 GB');
+describe('formatDataSize', () => {
+  it('formats a gibibyte or more in GB with two decimals', () => {
+    expect(formatDataSize(1024 ** 3)).toBe('1.00 GB');
+    expect(formatDataSize(1.43 * 1024 ** 3)).toBe('1.43 GB');
   });
 
-  it('formats sub-GB values with two decimals (no MB/KB fallback)', () => {
-    // 512 MiB is exactly 0.5 GB; avoids rounding ambiguity at .48/.49.
-    expect(formatGb(1024 ** 3 / 2)).toBe('0.50 GB');
-    expect(formatGb(100 * 1024 ** 2)).toBe('0.10 GB');
+  it('switches to MB, KB and B instead of showing 0.00 GB for small totals', () => {
+    expect(formatDataSize(1024 ** 3 / 2)).toBe('512.0 MB');
+    expect(formatDataSize(100 * 1024 ** 2)).toBe('100.0 MB');
+    expect(formatDataSize(60 * 2880)).toBe('168.8 KB');
+    expect(formatDataSize(500)).toBe('500 B');
+    expect(formatDataSize(0)).toBe('0 B');
   });
 
-  it('returns "0.00 GB" for non-finite or negative input', () => {
-    expect(formatGb(-1)).toBe('0.00 GB');
-    expect(formatGb(Number.NaN)).toBe('0.00 GB');
+  it('moves to the next unit when rounding would show 1024', () => {
+    expect(formatDataSize(1024 ** 2 - 1)).toBe('1.0 MB');
+    expect(formatDataSize(1024 ** 3 - 1)).toBe('1.00 GB');
+  });
+
+  it('keeps counting in GB for very large totals', () => {
+    expect(formatDataSize(2048 * 1024 ** 3)).toBe('2048.00 GB');
+  });
+
+  it('returns "0 B" for non-finite or negative input', () => {
+    expect(formatDataSize(-1)).toBe('0 B');
+    expect(formatDataSize(Number.NaN)).toBe('0 B');
   });
 });

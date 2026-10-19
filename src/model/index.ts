@@ -37,7 +37,7 @@ export {
   type FallbackCoordinates,
 } from './resolve';
 
-export { buildTimeline, formatDuration, formatGb, type TimelinePoint } from './timeline';
+export { buildTimeline, formatDuration, formatDataSize, type TimelinePoint } from './timeline';
 
 export {
   emptyRemembered,

@@ -88,13 +88,28 @@ export function formatDuration(totalSeconds: number): string {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`;
 }
 
+const DATA_UNITS = ['B', 'KB', 'MB', 'GB'] as const;
+
 /**
- * "1.00 GB" for 1024**3; "0.42 GB" for 450 MB; always rendered in GB with
- * two decimals, matching the Python `format_gb`.
+ * Data volume in the largest unit that keeps the number readable:
+ * "500 B", "168.8 KB", "512.0 MB", "1.43 GB". A fixed unit would show
+ * anything under 5 MB as "0.00 GB", which tells the user nothing.
  */
-export function formatGb(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '0.00 GB';
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+export function formatDataSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+  let unit = 0;
+  let value = bytes;
+  while (value >= 1024 && unit < DATA_UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const decimalsFor = (u: number) => (u === 0 ? 0 : u === DATA_UNITS.length - 1 ? 2 : 1);
+  // Rounding can tip 1023.97 up to "1024.0"; show that in the next unit instead.
+  if (unit < DATA_UNITS.length - 1 && Number(value.toFixed(decimalsFor(unit))) >= 1024) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(decimalsFor(unit))} ${DATA_UNITS[unit]}`;
 }
 
 export type { FallbackCoordinates };
