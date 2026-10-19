@@ -68,7 +68,11 @@ body {
 .app-layout {
   display: grid;
   grid-template-columns: 320px 1fr 280px;
-  min-height: 100vh;
+  /* Exactly the window tall, so a long side panel scrolls inside itself instead of
+     stretching the whole layout and pushing the dome's bottom corners off screen. */
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
 }
 
 .app-layout__panel {
@@ -157,6 +161,29 @@ body {
   inset: 0;
   pointer-events: none;
   font-family: inherit;
+}
+
+.overlay__hud,
+.overlay__chart-wrap {
+  /* The overlay layer ignores the pointer so the dome stays draggable; these two blocks opt back in so they can be moved. */
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.overlay--dragging {
+  cursor: grabbing;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Once moved, an overlay is placed by its top-left corner instead of its default corner. */
+.overlay__hud.overlay--moved,
+.overlay__chart-wrap.overlay--moved {
+  right: auto;
+  bottom: auto;
+  transform-origin: top left;
 }
 
 .overlay__hud {
@@ -1349,4 +1376,11 @@ body {
     left: 0.5rem;
     right: 0.5rem;
   }
+}
+
+.controls__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fg-faint);
 }

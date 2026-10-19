@@ -27,6 +27,7 @@ import { formatDuration } from '../model/timeline';
 import { clear, confirm, el } from './dom';
 import { hasFitsExtension, pickDirectory, pickFiles, readLightBatches } from './file_io';
 import { reportIngestFailure, reportIngestSuccess, reportNoFitsFiles } from './ingest_feedback';
+import type { OverlayPositions } from './overlay_layout';
 import type { Store } from './store';
 
 export interface OverlayVisibility {
@@ -42,6 +43,8 @@ export interface AppState {
   loading: { current: number; total: number; fileName: string } | null;
   playback: PlaybackSnapshot;
   overlay: OverlayVisibility;
+  /** Where the user has dragged the movable overlays; empty means the default corners. */
+  overlayPositions: OverlayPositions;
 }
 
 export function mountSessionPanel(root: HTMLElement, store: Store<AppState>): () => void {

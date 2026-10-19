@@ -9,6 +9,10 @@
  * or its name changes -- not on every reveal tick. The chart is redrawn on
  * every tick because its progress dot moves.
  *
+ * The panel and the chart can be dragged anywhere over the dome. Their spots
+ * live in the app state (see overlay_layout.ts) so the exported video draws
+ * them where the user put them.
+ *
  * `renderOverlayTo(ctx, width, height)` mirrors the live DOM overlay onto a
  * 2D canvas at the given size, used by the video exporter to capture
  * the same visual the user sees.
@@ -35,9 +39,15 @@ import { parseFitsDate } from '../astro/date_parse';
 import { announce } from './announce';
 import { roundRect } from './canvas_utils';
 import { clear, el } from './dom';
+import {
+  clampOrigin,
+  originFor,
+  positionFromOrigin,
+  type OverlayId,
+  type OverlayPositions,
+  type Size,
+} from './overlay_layout';
 
-const HUD_LEFT = 16;
-const HUD_TOP = 16;
 const HUD_WIDTH = 204;
 const HUD_RADIUS = 10;
 const COUNTER_BLOCK_HEIGHT = 58;
@@ -46,14 +56,15 @@ const STATS_PADDING = 12;
 const STATS_LINE_HEIGHT = 21;
 const STATS_FONT = "500 13px 'Inter', system-ui, sans-serif";
 const STATS_LABEL_FONT = "600 11px 'Inter', system-ui, sans-serif";
-const CHART_BOTTOM_OFFSET = 16;
-const CHART_RIGHT_OFFSET = 16;
+/** Pointer travel, in px, before a press on an overlay counts as a drag rather than a click. */
+const DRAG_THRESHOLD = 3;
 
 export interface OverlaySnapshot {
   counterText: string;
   statsLines: { label: string; value: string }[];
   chart: AltitudeChartData | null;
   visibility: OverlayVisibility;
+  positions: OverlayPositions;
 }
 
 type ChartBase = Omit<AltitudeChartData, 'currentMs'>;
@@ -91,7 +102,10 @@ export function mountOverlay(
   let lastTimeline: TimelinePoint[] = [];
   let lastProject: AppState['project'] | null = null;
   let currentVisibility: OverlayVisibility = store.get().overlay;
-  let currentSnapshot: OverlaySnapshot = emptySnapshot(currentVisibility);
+  let currentSnapshot: OverlaySnapshot = emptySnapshot(
+    currentVisibility,
+    store.get().overlayPositions,
+  );
   let hasPoint = false;
   let hasChart = false;
   let announcedNight: number | null = null;
@@ -103,7 +117,7 @@ export function mountOverlay(
     drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, chart);
   };
 
-  const recompute = (state: AppState) => {
+  const renderContent = (state: AppState) => {
     // The project is immutable, so a new object means lights, sessions or
     // colours changed and the cached timeline and chart are stale.
     if (state.project !== lastProject) {
@@ -141,6 +155,7 @@ export function mountOverlay(
         statsLines: [],
         chart,
         visibility: currentVisibility,
+        positions: state.overlayPositions,
       };
       return;
     }
@@ -177,6 +192,7 @@ export function mountOverlay(
       statsLines,
       chart,
       visibility: currentVisibility,
+      positions: state.overlayPositions,
     };
   };
 
@@ -195,6 +211,90 @@ export function mountOverlay(
     return cachedChartBase;
   };
 
+  const canvasSize = (): Size => ({ width: root.clientWidth, height: root.clientHeight });
+  const boxOf = (element: HTMLElement): Size => {
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  };
+  const movable: Array<{ id: OverlayId; element: HTMLElement }> = [
+    { id: 'hud', element: hud },
+    { id: 'chart', element: chartWrap },
+  ];
+
+  /** Puts each overlay at its stored spot, or back at its default corner. */
+  const placeOverlays = (positions: OverlayPositions) => {
+    const canvas = canvasSize();
+    for (const { id, element } of movable) {
+      const moved = positions[id] !== undefined;
+      element.classList.toggle('overlay--moved', moved);
+      if (!moved) {
+        element.style.left = '';
+        element.style.top = '';
+        continue;
+      }
+      const origin = originFor(id, positions, canvas, boxOf(element));
+      element.style.left = `${origin.left}px`;
+      element.style.top = `${origin.top}px`;
+    }
+  };
+
+  const makeDraggable = (id: OverlayId, element: HTMLElement) => {
+    element.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const canvas = canvasSize();
+      const box = boxOf(element);
+      const rootRect = root.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
+      const grab = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const start = { x: event.clientX, y: event.clientY };
+      let origin = { left: rect.left - rootRect.left, top: rect.top - rootRect.top };
+      let dragged = false;
+
+      element.setPointerCapture(event.pointerId);
+      element.classList.add('overlay--dragging');
+
+      const move = (e: PointerEvent) => {
+        if (!dragged && Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_THRESHOLD) {
+          return;
+        }
+        dragged = true;
+        element.classList.add('overlay--moved');
+        origin = clampOrigin(
+          { left: e.clientX - rootRect.left - grab.x, top: e.clientY - rootRect.top - grab.y },
+          canvas,
+          box,
+        );
+        element.style.left = `${origin.left}px`;
+        element.style.top = `${origin.top}px`;
+      };
+      const end = () => {
+        element.removeEventListener('pointermove', move);
+        element.removeEventListener('pointerup', end);
+        element.removeEventListener('pointercancel', end);
+        element.classList.remove('overlay--dragging');
+        if (!dragged) {
+          // A plain click moves nothing; restore whatever the state says.
+          placeOverlays(store.get().overlayPositions);
+          return;
+        }
+        const position = positionFromOrigin(origin, canvas, box);
+        store.set((s) => ({ ...s, overlayPositions: { ...s.overlayPositions, [id]: position } }));
+      };
+      element.addEventListener('pointermove', move);
+      element.addEventListener('pointerup', end);
+      element.addEventListener('pointercancel', end);
+    });
+  };
+  for (const { id, element } of movable) makeDraggable(id, element);
+
+  // Positions depend on the size of the overlays, which change with their content.
+  const recompute = (state: AppState) => {
+    renderContent(state);
+    placeOverlays(state.overlayPositions);
+  };
+  new ResizeObserver(() => placeOverlays(store.get().overlayPositions)).observe(root);
+
   store.subscribe(recompute);
   recompute(store.get());
 
@@ -204,12 +304,16 @@ export function mountOverlay(
       currentVisibility = visibility;
       currentSnapshot = { ...currentSnapshot, visibility };
       applyVisibility(visibility, hasPoint, hasChart);
+      placeOverlays(store.get().overlayPositions);
     },
   };
 }
 
-function emptySnapshot(visibility: OverlayVisibility): OverlaySnapshot {
-  return { counterText: formatDuration(0), statsLines: [], chart: null, visibility };
+function emptySnapshot(
+  visibility: OverlayVisibility,
+  positions: OverlayPositions,
+): OverlaySnapshot {
+  return { counterText: formatDuration(0), statsLines: [], chart: null, visibility, positions };
 }
 
 export function renderOverlayTo(
@@ -218,22 +322,29 @@ export function renderOverlayTo(
   height: number,
   snapshot: OverlaySnapshot,
 ): void {
-  ctx.save();
+  const canvas = { width, height };
   const { visible, counter, stats, chart } = snapshot.visibility;
-  if (visible) drawHud(ctx, snapshot, counter, stats);
-  if (visible && chart && snapshot.chart) {
-    ctx.translate(
-      width - CHART_WIDTH - CHART_RIGHT_OFFSET,
-      height - CHART_HEIGHT - CHART_BOTTOM_OFFSET,
-    );
-    drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, snapshot.chart);
+  if (visible) {
+    ctx.save();
+    drawHud(ctx, canvas, snapshot, counter, stats);
+    ctx.restore();
   }
-  ctx.restore();
+  if (visible && chart && snapshot.chart) {
+    ctx.save();
+    const origin = originFor('chart', snapshot.positions, canvas, {
+      width: CHART_WIDTH,
+      height: CHART_HEIGHT,
+    });
+    ctx.translate(origin.left, origin.top);
+    drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, snapshot.chart);
+    ctx.restore();
+  }
 }
 
 /** Counter and stats share one glass panel, mirroring the DOM `.overlay__hud`. */
 function drawHud(
   ctx: CanvasRenderingContext2D,
+  canvas: Size,
   snapshot: OverlaySnapshot,
   showCounter: boolean,
   showStats: boolean,
@@ -244,9 +355,11 @@ function drawHud(
   const height = counterHeight + statsHeight;
   if (height === 0) return;
 
-  ctx.save();
+  const origin = originFor('hud', snapshot.positions, canvas, { width: HUD_WIDTH, height });
+  ctx.translate(origin.left, origin.top);
+
   ctx.fillStyle = 'rgba(8, 10, 18, 0.62)';
-  roundRect(ctx, HUD_LEFT, HUD_TOP, HUD_WIDTH, height, HUD_RADIUS);
+  roundRect(ctx, 0, 0, HUD_WIDTH, height, HUD_RADIUS);
   ctx.fill();
   ctx.strokeStyle = 'rgba(120, 132, 158, 0.35)';
   ctx.lineWidth = 1;
@@ -257,16 +370,16 @@ function drawHud(
     ctx.font = COUNTER_FONT;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText(snapshot.counterText, HUD_LEFT + 16, HUD_TOP + counterHeight / 2 + 1);
+    ctx.fillText(snapshot.counterText, 16, counterHeight / 2 + 1);
   }
 
   if (lines.length > 0) {
-    const top = HUD_TOP + counterHeight;
+    const top = counterHeight;
     if (showCounter) {
       ctx.strokeStyle = 'rgba(120, 132, 158, 0.28)';
       ctx.beginPath();
-      ctx.moveTo(HUD_LEFT + 12, top + 0.5);
-      ctx.lineTo(HUD_LEFT + HUD_WIDTH - 12, top + 0.5);
+      ctx.moveTo(12, top + 0.5);
+      ctx.lineTo(HUD_WIDTH - 12, top + 0.5);
       ctx.stroke();
     }
     ctx.textBaseline = 'middle';
@@ -275,14 +388,13 @@ function drawHud(
       ctx.textAlign = 'left';
       ctx.font = STATS_LABEL_FONT;
       ctx.fillStyle = 'rgba(170, 178, 198, 0.95)';
-      ctx.fillText(lines[i]!.label.toUpperCase(), HUD_LEFT + 16, y);
+      ctx.fillText(lines[i]!.label.toUpperCase(), 16, y);
       ctx.textAlign = 'right';
       ctx.font = STATS_FONT;
       ctx.fillStyle = 'rgb(226, 231, 244)';
-      ctx.fillText(lines[i]!.value, HUD_LEFT + HUD_WIDTH - 16, y);
+      ctx.fillText(lines[i]!.value, HUD_WIDTH - 16, y);
     }
   }
-  ctx.restore();
 }
 
 function applyVisibility(
