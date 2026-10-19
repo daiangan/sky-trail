@@ -35,8 +35,18 @@ export interface ControlsPanelHandlers {
   onExport: () => void;
 }
 
+export interface ControlsSettings {
+  pointsPerSecond: number;
+  cameraRotationDegPerSec: number;
+  pointSize: number;
+  surfaceOpacity: number;
+  floorOpacity: number;
+}
+
 export interface ControlsPanelApi {
   setPlaybackState: (snapshot: PlaybackSnapshot) => void;
+  /** Current slider values, used to configure the 3D view when it loads after the panel. */
+  getSettings: () => ControlsSettings;
 }
 
 export function mountControlsPanel(
@@ -205,6 +215,13 @@ export function mountControlsPanel(
   });
 
   return {
+    getSettings: () => ({
+      pointsPerSecond: Number(arcSpeed.range.value),
+      cameraRotationDegPerSec: Number(cameraSpeed.range.value),
+      pointSize: Number(pointSize.range.value),
+      surfaceOpacity: Number(surfaceOpacity.range.value) / 100,
+      floorOpacity: Number(floorOpacity.range.value) / 100,
+    }),
     setPlaybackState: (snapshot) => {
       playBtn.textContent = snapshot.isPlaying ? '❚❚ Pause' : '▶ Play';
       playBtn.disabled = snapshot.timelineLength === 0;
