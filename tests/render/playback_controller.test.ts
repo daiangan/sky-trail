@@ -138,4 +138,49 @@ describe('PlaybackController', () => {
     expect(pc.snapshot().revealCount).toBe(5);
     expect(pc.snapshot().isPlaying).toBe(false);
   });
+
+  describe('seek', () => {
+    it('jumps to the requested count and keeps the progress in sync', () => {
+      const pc = new PlaybackController();
+      pc.setTimelineLength(20);
+      pc.seek(7);
+      expect(pc.snapshot()).toMatchObject({ revealCount: 7, revealProgress: 7 });
+    });
+
+    it('clamps to the timeline and rounds to whole points', () => {
+      const pc = new PlaybackController();
+      pc.setTimelineLength(10);
+      pc.seek(-3);
+      expect(pc.snapshot().revealCount).toBe(0);
+      pc.seek(99);
+      expect(pc.snapshot().revealCount).toBe(10);
+      pc.seek(3.6);
+      expect(pc.snapshot().revealCount).toBe(4);
+    });
+
+    it('keeps playing from the new position when scrubbing mid-playback', () => {
+      const pc = new PlaybackController();
+      pc.setTimelineLength(20);
+      pc.setPointsPerSecond(5);
+      pc.play();
+      pc.seek(10);
+      expect(pc.snapshot().isPlaying).toBe(true);
+      pc.tick(1);
+      expect(pc.snapshot().revealCount).toBe(15);
+    });
+
+    it('pauses when it lands on the last point', () => {
+      const pc = new PlaybackController();
+      pc.setTimelineLength(20);
+      pc.play();
+      pc.seek(20);
+      expect(pc.snapshot()).toMatchObject({ revealCount: 20, isPlaying: false, isFinished: true });
+    });
+
+    it('does nothing without a timeline', () => {
+      const pc = new PlaybackController();
+      pc.seek(5);
+      expect(pc.snapshot().revealCount).toBe(0);
+    });
+  });
 });
