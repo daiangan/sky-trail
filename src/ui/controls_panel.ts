@@ -19,6 +19,7 @@ import {
 import type { PlaybackSnapshot } from '../render/playback_controller';
 import { clear, el } from './dom';
 import type { OverlayVisibility } from './session_panel';
+import { hasCustomPositions } from './overlay_layout';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
 
@@ -180,6 +181,21 @@ export function mountControlsPanel(
 
   // --- overlay toggles --------------------------------------------------
 
+  const resetOverlays = el(
+    'button',
+    {
+      class: 'btn btn--ghost',
+      id: 'reset-overlays',
+      type: 'button',
+      title: 'Put the stats panel and the altitude chart back in their default corners',
+    },
+    ['Reset overlay positions'],
+  );
+  resetOverlays.addEventListener('click', () => {
+    store.set((s) => ({ ...s, overlayPositions: {} }));
+  });
+  resetOverlays.disabled = !hasCustomPositions(store.get().overlayPositions);
+
   const overlayToggle = overlayToggles(store.get().overlay, (visibility) => {
     store.set((s) => ({ ...s, overlay: visibility }));
   });
@@ -206,12 +222,17 @@ export function mountControlsPanel(
     el('section', { class: 'controls__section' }, [
       el('h2', { class: 'controls__title' }, ['Overlay']),
       overlayToggle.root,
+      el('p', { class: 'controls__hint' }, [
+        'Drag the stats panel and the altitude chart anywhere over the dome. The exported video keeps your layout.',
+      ]),
+      resetOverlays,
     ]),
     createGithubFooter(),
   );
 
   store.subscribe((state) => {
     overlayToggle.setVisibility(state.overlay);
+    resetOverlays.disabled = !hasCustomPositions(state.overlayPositions);
   });
 
   return {

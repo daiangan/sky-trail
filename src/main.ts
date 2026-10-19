@@ -14,6 +14,7 @@ import { mountMobileLayout } from './ui/mobile_layout';
 import { mountViewToolbar } from './ui/view_toolbar';
 import { reportIngestFailure, setCoordinatesOpener } from './ui/ingest_feedback';
 import { Store } from './ui/store';
+import { loadOverlayPositions, saveOverlayPositions } from './ui/overlay_layout';
 import { showToast } from './ui/toast';
 import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
@@ -54,6 +55,7 @@ const initialState: AppState = {
   loading: null,
   playback: initialPlayback,
   overlay: initialOverlay,
+  overlayPositions: loadOverlayPositions(),
 };
 
 const store = new Store<AppState>(initialState);
@@ -142,7 +144,12 @@ const controlsApi = mountControlsPanel(controlsArea, store, {
   },
 });
 
+let lastOverlayPositions = store.get().overlayPositions;
 store.subscribe((state) => {
+  if (state.overlayPositions !== lastOverlayPositions) {
+    lastOverlayPositions = state.overlayPositions;
+    saveOverlayPositions(state.overlayPositions);
+  }
   if (domeView && state.project !== lastProject) {
     lastProject = state.project;
     domeView.setProject(state.project);

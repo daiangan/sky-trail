@@ -61,6 +61,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 - **Accumulated Integration Counter and Stats**: One top-left panel showing cumulative exposure duration (`Xh YYm`), subframe count, data volume (shown in KB, MB or GB as it grows), observation date, and session sequence.
 - **Altitude Chart**: Bottom-right HUD showing how high the target climbs over the whole imaging night, with a shaded band for the time you actually imaged, a UTC time axis, 30° and 60° reference lines and a dot that follows the animation.
 - **Independent Toggles**: Master overlay switch and independent visibility toggles for each HUD element.
+- **Movable Overlays**: Drag the stats panel and the altitude chart anywhere over the dome. Your layout is remembered between visits and used by the exported video, and **Reset overlay positions** in the settings puts them back in their default corners. Where they end up, on or off the dome and over each other, is up to you.
 
 ### 🎥 Video Export
 
@@ -111,7 +112,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture, fat lines for the arcs)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (23 suites, 186 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (24 suites, 202 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 - **CI/CD**: GitHub Actions type-check, lint, test and build every pull request and every push to `main`; the same checks gate the deployment to GitHub Pages.
 
@@ -208,7 +209,7 @@ src/
 ├── render/     # Three.js dome (wireframe, arcs, camera framing), playback controller & shared defaults
 └── ui/         # Session manager, controls panel, HUD overlay, altitude chart, view toolbar,
                 # mobile drawers, notifications, file loading & dialogs
-tests/          # Vitest test suites (186 tests), mirroring the structure of src/
+tests/          # Vitest test suites (202 tests), mirroring the structure of src/
 ```
 
 ---
