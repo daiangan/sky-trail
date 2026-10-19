@@ -41,7 +41,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 - **True Horizontal Coordinates**: Interactive 3D celestial dome with 15° altitude rings and 30° azimuth meridians.
 - **Cardinal Direction Markers**: Integrated **N**, **E**, **S**, and **W** indicators aligned with the horizon.
 - **Customizable Dome Appearance**: Real-time sliders for **Dome Surface Opacity** (translucent celestial glass volume) and **Dome Floor Opacity** (terrestrial ground circle).
-- **Cinematic Controls**: Smooth orbit, pitch, and zoom camera controls, plus an optional automated turntable rotation (`°/sec`, off by default).
+- **Cinematic Controls**: Smooth orbit, pitch, and zoom camera controls, plus an automated turntable rotation (`°/sec`, a gentle 1°/sec by default; set it to 0 to keep the camera still).
 
 ### 📅 Multi-Night Session Management
 
