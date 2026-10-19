@@ -14,7 +14,12 @@
  * the same visual the user sees.
  */
 
-import { buildTimeline, formatDuration, formatGb, type TimelinePoint } from '../model/timeline';
+import {
+  buildTimeline,
+  formatDuration,
+  formatDataSize,
+  type TimelinePoint,
+} from '../model/timeline';
 import type { OverlayVisibility } from './session_panel';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
@@ -154,7 +159,7 @@ export function mountOverlay(
     counter.textContent = formatDuration(point.cumulativeExptimeS);
     const statsLines = [
       { label: 'Subframes', value: String(point.cumulativeSubframes) },
-      { label: 'Data', value: formatGb(point.cumulativeBytes) },
+      { label: 'Data', value: formatDataSize(point.cumulativeBytes) },
       { label: 'Date', value: (point.light.dateObs ?? '').slice(0, 10) },
       { label: 'Night', value: `${point.nightIndex} of ${point.totalNights}` },
     ];
@@ -292,7 +297,8 @@ function applyVisibility(
   const showCounter = visibility.visible && visibility.counter;
   const showStats = visibility.visible && visibility.stats && hasPoint;
   if (hud) hud.style.display = showCounter || showStats ? 'flex' : 'none';
-  if (counter) counter.style.display = showCounter ? 'block' : 'none';
+  // `flex`, not `block`: the counter is centred vertically with flexbox.
+  if (counter) counter.style.display = showCounter ? 'flex' : 'none';
   if (stats) stats.style.display = showStats ? 'flex' : 'none';
   if (chart) {
     chart.style.display = visibility.visible && visibility.chart && hasChart ? 'block' : 'none';
