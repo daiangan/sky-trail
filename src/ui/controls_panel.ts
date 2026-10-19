@@ -80,28 +80,32 @@ export function mountControlsPanel(
   const arcSpeed = slider({
     id: 'arc-speed',
     label: 'Arc speed',
+    hint: 'How fast the arc is drawn, in frames per second.',
     min: 0.1,
     max: 500,
     step: 0.1,
     initialValue: store.get().playback.pointsPerSecond,
-    unit: ' pts/sec',
+    unit: ' frames/sec',
     onInput: (value) => handlers.onPointsPerSecondChange(value),
   });
 
   const cameraSpeed = slider({
     id: 'camera-speed',
     label: 'Camera rotation',
+    hint: 'Slowly spins the view around the dome. You can still drag it at any time.',
     min: 0,
     max: 60,
     step: 1,
     initialValue: 0,
     unit: ' °/sec',
+    offAtZero: true,
     onInput: (value) => handlers.onCameraSpeedChange(value),
   });
 
   const pointSize = slider({
     id: 'point-size',
     label: 'Point size',
+    hint: 'Size of the dots. The arc line gets thicker with it.',
     min: 1,
     max: 20,
     step: 1,
@@ -113,22 +117,26 @@ export function mountControlsPanel(
   const surfaceOpacity = slider({
     id: 'surface-opacity',
     label: 'Dome surface',
+    hint: 'Tint of the glass dome. Higher makes it more solid.',
     min: 0,
     max: 100,
     step: 1,
     initialValue: Math.round(DEFAULT_SURFACE_OPACITY * 100),
     unit: '%',
+    offAtZero: true,
     onInput: (value) => handlers.onSurfaceOpacityChange?.(value / 100),
   });
 
   const floorOpacity = slider({
     id: 'floor-opacity',
     label: 'Dome floor',
+    hint: 'Ground disc under the dome that marks the horizon.',
     min: 0,
     max: 100,
     step: 1,
     initialValue: Math.round(DEFAULT_FLOOR_OPACITY * 100),
     unit: '%',
+    offAtZero: true,
     onInput: (value) => handlers.onFloorOpacityChange?.(value / 100),
   });
 
@@ -213,6 +221,10 @@ interface SliderConfig {
   step: number;
   initialValue: number;
   unit: string;
+  /** Short explanation shown under the label, so the control is self-explanatory. */
+  hint?: string;
+  /** Show "Off" instead of "0<unit>" for controls where zero switches the effect off. */
+  offAtZero?: boolean;
   /** Custom text for the value label; defaults to the value plus `unit`. */
   format?: (value: number, max: number) => string;
   onInput: (value: number) => void;
@@ -237,7 +249,11 @@ function slider(config: SliderConfig): SliderHandles {
   }) as HTMLInputElement;
   const refresh = () => {
     const value = Number(range.value);
-    const text = config.format ? config.format(value, Number(range.max)) : `${value}${config.unit}`;
+    const text = config.format
+      ? config.format(value, Number(range.max))
+      : config.offAtZero && value === 0
+        ? 'Off'
+        : `${value}${config.unit}`;
     valueLabel.textContent = text;
     range.setAttribute('aria-valuetext', text);
   };
@@ -246,10 +262,15 @@ function slider(config: SliderConfig): SliderHandles {
     refresh();
     config.onInput(Number(range.value));
   });
+  const hint = config.hint
+    ? el('span', { class: 'slider__hint', id: `${config.id}-hint` }, [config.hint])
+    : null;
+  if (hint) range.setAttribute('aria-describedby', hint.id);
   const root = el('div', { class: 'slider' }, [
     el('label', { class: 'slider__label', for: config.id }, [config.label]),
-    range,
     valueLabel,
+    ...(hint ? [hint] : []),
+    range,
   ]);
   return {
     root,
