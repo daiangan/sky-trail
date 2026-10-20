@@ -15,6 +15,7 @@ import { mountViewToolbar } from './ui/view_toolbar';
 import { reportIngestFailure, setCoordinatesOpener } from './ui/ingest_feedback';
 import { Store } from './ui/store';
 import { loadOverlayPositions, saveOverlayPositions } from './ui/overlay_layout';
+import { loadDemo } from './ui/demo_loader';
 import { showToast } from './ui/toast';
 import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
@@ -118,9 +119,21 @@ async function pickAndIngest(picker: () => Promise<{ files: File[] } | null>): P
   }
 }
 
+/** True when the 3D view is not ready yet; the demo starts playing as soon as it is. */
+let playDemoWhenReady = false;
+
+function loadDemoAndPlay(): void {
+  loadDemo(store);
+  // People who prefer reduced motion press Play themselves.
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (domeView) domeView.play();
+  else playDemoWhenReady = true;
+}
+
 setupDragAndDrop({
   canvasArea,
   store,
+  onLoadDemo: loadDemoAndPlay,
   onPickFolder: () => pickAndIngest(pickDirectory),
   onPickFiles: () => pickAndIngest(pickFiles),
 });
@@ -185,6 +198,10 @@ async function startDomeView(): Promise<void> {
     lastProject = store.get().project;
     view.setProject(lastProject);
     canvas.classList.add('dome-canvas--ready');
+    if (playDemoWhenReady) {
+      playDemoWhenReady = false;
+      view.play();
+    }
   } catch (error) {
     console.error('Could not start the 3D view', error);
     showToast({

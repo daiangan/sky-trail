@@ -20,10 +20,11 @@ export interface DragDropOptions {
   store: Store<AppState>;
   onPickFolder?: () => void;
   onPickFiles?: () => void;
+  onLoadDemo?: () => void;
 }
 
 export function setupDragAndDrop(options: DragDropOptions): () => void {
-  const { canvasArea, store, onPickFolder, onPickFiles } = options;
+  const { canvasArea, store, onPickFolder, onPickFiles, onLoadDemo } = options;
 
   // Prevent default drag/drop on entire window so browser does not navigate away
   const preventWindowDefaults = (e: DragEvent) => {
@@ -61,6 +62,12 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
         ]),
         el('button', { class: 'btn', type: 'button', id: 'empty-pick-files' }, ['Choose Files…']),
       ]),
+      el('div', { class: 'canvas-empty-state__divider' }, ['or']),
+      el(
+        'button',
+        { class: 'btn btn--outline btn--block', type: 'button', id: 'empty-load-demo' },
+        ['✦ Try a demo — no files needed'],
+      ),
     ]),
   ]);
   canvasArea.appendChild(emptyStateHero);
@@ -68,6 +75,10 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
   const folderBtn = emptyStateHero.querySelector('#empty-pick-folder');
   if (folderBtn && onPickFolder) {
     folderBtn.addEventListener('click', onPickFolder);
+  }
+  const demoBtn = emptyStateHero.querySelector('#empty-load-demo');
+  if (demoBtn && onLoadDemo) {
+    demoBtn.addEventListener('click', onLoadDemo);
   }
   const filesBtn = emptyStateHero.querySelector('#empty-pick-files');
   if (filesBtn && onPickFiles) {

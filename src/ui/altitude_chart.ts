@@ -149,19 +149,26 @@ export function drawAltitudeChart(
   ctx.stroke();
 
   // Header: title on the left, current altitude on the right.
+  const currentAlt = data.currentMs === null ? null : altitudeAt(data, data.currentMs);
+  const readout = currentAlt === null ? '—' : `${Math.round(currentAlt)}°`;
   ctx.textBaseline = 'top';
+  ctx.font = "600 18px 'Outfit', 'Inter', system-ui, sans-serif";
+  const readoutWidth = ctx.measureText(readout).width;
+
+  // Session names can be long ("Object 1 · Night 1"); shorten the title rather than
+  // let it run under the altitude readout.
   ctx.textAlign = 'left';
   ctx.fillStyle = dimTextColor;
   ctx.font = "600 11px 'Inter', system-ui, sans-serif";
-  ctx.fillText(`ALTITUDE · ${data.title.toUpperCase()}`, 12, 11);
+  const titleRoom = width - 12 - 12 - readoutWidth - 8;
+  ctx.fillText(fitText(ctx, `ALTITUDE · ${data.title.toUpperCase()}`, titleRoom), 12, 11);
   ctx.font = "10px 'Inter', system-ui, sans-serif";
   ctx.fillText('Shaded = imaging time', 12, 27);
 
-  const currentAlt = data.currentMs === null ? null : altitudeAt(data, data.currentMs);
   ctx.textAlign = 'right';
   ctx.fillStyle = textColor;
   ctx.font = "600 18px 'Outfit', 'Inter', system-ui, sans-serif";
-  ctx.fillText(currentAlt === null ? '—' : `${Math.round(currentAlt)}°`, width - 12, 8);
+  ctx.fillText(readout, width - 12, 8);
 
   // Horizontal grid + altitude labels.
   ctx.font = "10px 'Inter', system-ui, sans-serif";
@@ -283,4 +290,12 @@ function strokeAltitude(
     }
   }
   ctx.stroke();
+}
+
+/** `text` shortened with an ellipsis until it fits `maxWidth` in the current font. */
+export function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let end = text.length - 1;
+  while (end > 1 && ctx.measureText(`${text.slice(0, end).trimEnd()}…`).width > maxWidth) end -= 1;
+  return `${text.slice(0, end).trimEnd()}…`;
 }
