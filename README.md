@@ -51,7 +51,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 
 - **Organize by Night**: Group subframes into distinct capture sessions (e.g. "Night 1", "Night 2"), then rename, reorder or delete them.
 - **Custom Palette Coding**: Assign unique colors to each session to visually distinguish target tracks across different dates. Numbered badges at the start of each arc keep nights distinguishable without relying on color.
-- **Try a Demo**: No FITS files at hand? **Try a demo** on the welcome screen loads a simulated night in which a single telescope images two invented objects one after the other, and starts playing. The objects are fictional but the sky is real: positions come from the same horizontal-coordinate maths as your own lights, with an imaging cadence that includes a dither pause after every third frame. A notification explains that it is simulated, and **Clear demo** removes it without touching anything you have added. **Clear all sessions**, at the bottom of the session list, empties the project whenever you want to start over.
+- **Try a Demo**: No FITS files at hand? **Try a demo** on the welcome screen loads a simulated night in which a single telescope images two invented objects one after the other, and starts playing. The objects are fictional but the sky is real: positions come from the same horizontal-coordinate maths as your own lights, with an imaging cadence that includes a dither pause after every third frame. A notification explains that it is simulated and stays open until you close it; its **Clear demo** button removes the demo without touching anything you have added. **Clear all sessions**, always at the bottom of the session list, empties the project whenever you want to start over.
 - **Drag & Drop**: Drag entire folder trees or individual `.fits`, `.fit`, or `.fts` files directly onto the central 3D canvas, or use **Select Folder** and **Choose Files**.
 - **Works With Your Capture Software**: Headers written by N.I.N.A., ASIAIR, StellaVita/ToupTek, KStars/Ekos, APT, SharpCap and Siril are understood (see [Supported FITS headers](#supported-fits-headers)).
 - **Manual Coordinates Fallback**: Built-in dialog to provide manual target coordinates (RA/Dec) or observatory site location (Lat/Lon) if your camera software didn't populate them, with a button to detect your current location. Coordinates persist automatically across browser visits.
@@ -84,7 +84,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 ## 🚀 How to Use (Quick Start)
 
 1. Open <a href="https://daiangan.github.io/sky-trail/" target="_blank" rel="noopener noreferrer">SkyTrail in your browser</a>.
-2. Drag and drop your FITS light frames or folder directly onto the canvas (or click **Select Folder…**).
+2. Drag and drop your FITS light frames or folder directly onto the canvas (or click **Select Folder…**). No files at hand? Click **✦ Try a demo** to see a simulated night first.
 3. If you have multiple nights, click **+ New session** in the left sidebar and add your next set of lights.
 4. If a notification says some lights can't be placed on the dome, open **Target & site coordinates…** and fill in what your headers lack.
 5. Tune the arc speed, camera rotation, point size, dome appearance and session colors in the right panel.
@@ -146,6 +146,15 @@ Timestamps without a time zone are treated as UTC, as the FITS standard prescrib
 - **Small First Load**: The panels and the welcome screen render from about 27 kB of gzipped JavaScript and CSS. Three.js (about 142 kB gzipped, and the part that cannot shrink further) and the 3D view load right after, in the background, and the dome fades in when they arrive. Anything you do in the meantime is carried over: dropped files are loaded and handed to the view as soon as it starts, and slider values become its initial settings.
 - **Cache-Friendly Chunks**: Three.js and astronomy-engine ship as separate files that rarely change, so returning visitors reuse them from the browser cache across deploys.
 - **Graceful Failure**: If the 3D view cannot start (a failed download or no WebGL), a persistent notification explains it and the rest of the app keeps working.
+
+### Demo Data
+
+The "Try a demo" button loads simulated sessions built by a small seeded generator (`src/demo/demo_data.ts`), so the same demo appears every time and it can be tested.
+
+- **Objects**: two invented objects ("Object 1" and "Object 2"), about 7° apart, imaged on one night by one telescope: Object 1 first (180 s exposures), then a 4 to 6 minute pause to slew, then Object 2 (240 s exposures). That is about 100 frames and 6 hours of exposure, one session per object.
+- **Real sky**: nothing about the motion is faked. Each frame carries ordinary header values (date, exposure, target, site) and goes through the same horizontal-coordinate transform as a real light. The night is centred on the objects' meridian transit (`src/astro/transit.ts`), so the first arc climbs towards the meridian while the second sinks after it, and every frame is in the dark and above 30° of altitude.
+- **Imaging cadence**: a few seconds of download time after every frame and a longer dither pause (15 to 30 s) after every third frame, with seeded jitter, so the dots along each arc come in groups of three.
+- **Tests**: the tests check, among other things, that the frames are deterministic for a seed, that the Sun is below −18° and the objects above 30° for every frame, that the dither gaps follow the every-third-frame pattern, and that the arcs rise and fall as they should.
 
 ### Video Export Pipeline
 
