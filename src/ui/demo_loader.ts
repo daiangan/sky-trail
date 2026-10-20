@@ -9,8 +9,6 @@ import type { AppState } from './session_panel';
 import type { Store } from './store';
 import { showToast } from './toast';
 
-const DEMO_TOAST_MS = 20000;
-
 /** Replaces the (empty) project's sessions with the demo and explains what it is. */
 export function loadDemo(store: Store<AppState>): void {
   const sessions = generateDemoSessions();
@@ -27,7 +25,9 @@ export function loadDemo(store: Store<AppState>): void {
     message: 'Simulated demo data: 2 objects in one night. These are not real captures.',
     actionLabel: 'Clear demo',
     onAction: () => clearDemo(store, demoPaths),
-    durationMs: DEMO_TOAST_MS,
+    // Stays until the user closes it: it holds the one-click "Clear demo", and a timer
+    // would take it away just as the short animation ends.
+    durationMs: 0,
   });
 }
 
