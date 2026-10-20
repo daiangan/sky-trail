@@ -24,7 +24,7 @@ export function loadDemo(store: Store<AppState>): void {
 
   showToast({
     kind: 'info',
-    message: 'Simulated demo data: 2 objects, 2 nights each. These are not real captures.',
+    message: 'Simulated demo data: 2 objects in one night. These are not real captures.',
     actionLabel: 'Clear demo',
     onAction: () => clearDemo(store, demoPaths),
     durationMs: DEMO_TOAST_MS,

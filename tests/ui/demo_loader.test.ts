@@ -46,7 +46,7 @@ const demoPaths = new Set(demo.flatMap((session) => session.lights.map((l) => l.
 
 describe('clearDemo', () => {
   it('removes every demo session and returns to an empty project', () => {
-    const store = makeStore(demo, 2);
+    const store = makeStore(demo, 1);
     clearDemo(store, demoPaths);
     expect(store.get().project.sessions).toEqual([]);
     expect(store.get().selectedSessionId).toBeNull();
@@ -66,7 +66,7 @@ describe('clearDemo', () => {
     clearDemo(store, demoPaths);
     const sessions = store.get().project.sessions;
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]!.name).toBe('Object 1 · Night 1');
+    expect(sessions[0]!.name).toBe('Object 1');
     expect(sessions[0]!.lights.map((l) => l.path)).toEqual(['own_2.fits']);
   });
 
