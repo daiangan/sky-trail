@@ -113,7 +113,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture, fat lines for the arcs)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (27 suites, 228 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (28 suites, 232 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 - **CI/CD**: GitHub Actions type-check, lint, test and build every pull request and every push to `main`; the same checks gate the deployment to GitHub Pages.
 
@@ -220,7 +220,7 @@ src/
 ├── render/     # Three.js dome (wireframe, arcs, camera framing), playback controller & shared defaults
 └── ui/         # Session manager, controls panel, HUD overlay, altitude chart, view toolbar,
                 # mobile drawers, notifications, file loading & dialogs
-tests/          # Vitest test suites (228 tests), mirroring the structure of src/
+tests/          # Vitest test suites (232 tests), mirroring the structure of src/
 ```
 
 ---

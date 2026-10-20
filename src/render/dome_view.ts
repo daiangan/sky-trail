@@ -24,16 +24,15 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 import type { Project } from '../model';
 import { buildTimeline, type TimelinePoint } from '../model/timeline';
-import { computeAltAz } from '../astro/altaz';
-import { parseFitsDate } from '../astro/date_parse';
 import { computeDomeFraming } from './camera_framing';
-import { altAzToXyz, DOME_RADIUS, type Vec3 } from './coordinates';
+import { DOME_RADIUS, type Vec3 } from './coordinates';
 import {
   DEFAULT_CAMERA_ROTATION_DEG_PER_SEC,
   DEFAULT_FLOOR_OPACITY,
   DEFAULT_SURFACE_OPACITY,
 } from './defaults';
 import { buildDomeWireframe } from './dome_geometry';
+import { resolveTimelinePositions } from './timeline_positions';
 import { PlaybackController, type PlaybackSnapshot } from './playback_controller';
 
 export interface DomeViewOptions {
@@ -106,7 +105,8 @@ export class DomeView {
   private lastFrameTime: number | null = null;
   private project: Project | null = null;
   private timeline: TimelinePoint[] = [];
-  private resolvedPositions = new Map<string, Vec3>();
+  /** Dome position of each timeline point, by its index in `timeline`. */
+  private positions: Array<Vec3 | null> = [];
 
   private readonly initialElevationRad: number;
   private readonly initialAzimuthRad: number;
@@ -711,7 +711,7 @@ export class DomeView {
 
     if (!this.project) return;
     this.timeline = buildTimeline(this.project);
-    this.resolvedPositions = resolveTimelinePositions(this.timeline);
+    this.positions = resolveTimelinePositions(this.timeline);
     this.playback.setTimelineLength(this.timeline.length);
 
     const project = this.project;
@@ -719,9 +719,9 @@ export class DomeView {
     for (let i = 0; i < project.sessions.length; i += 1) {
       const session = project.sessions[i]!;
       const color = new THREE.Color(session.color);
-      const arcPositions = this.timeline
-        .filter((point) => point.nightIndex === i + 1)
-        .map((point) => this.resolvedPositions.get(point.light.path) ?? null);
+      const arcPositions = this.timeline.flatMap((point, index) =>
+        point.nightIndex === i + 1 ? [this.positions[index] ?? null] : [],
+      );
       const flat = filteredToFloat32(arcPositions);
 
       let core: Line2 | null = null;
@@ -779,7 +779,7 @@ export class DomeView {
 
     if (clamped > 0) {
       const lastPoint = this.timeline[clamped - 1]!;
-      const pos = this.resolvedPositions.get(lastPoint.light.path);
+      const pos = this.positions[clamped - 1];
       if (pos) {
         const geometry = this.currentMarker.geometry as THREE.BufferGeometry;
         const attr = geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -798,38 +798,6 @@ export class DomeView {
       this.markerHalo.visible = false;
     }
   }
-}
-
-function resolveTimelinePositions(timeline: readonly TimelinePoint[]): Map<string, Vec3> {
-  const out = new Map<string, Vec3>();
-  for (const point of timeline) {
-    const light = point.light;
-    if (light.altDeg !== null && light.azDeg !== null) {
-      out.set(light.path, altAzToXyz(light.altDeg, light.azDeg));
-      continue;
-    }
-    if (
-      light.objRaDeg === null ||
-      light.objDecDeg === null ||
-      light.siteLatDeg === null ||
-      light.siteLonDeg === null ||
-      !light.dateObs
-    ) {
-      continue;
-    }
-    const when = parseFitsDate(light.dateObs);
-    if (!when) continue;
-    const { altitudeDeg, azimuthDeg } = computeAltAz(
-      when,
-      {
-        latitudeDeg: light.siteLatDeg,
-        longitudeDeg: light.siteLonDeg,
-      },
-      { raDeg: light.objRaDeg, decDeg: light.objDecDeg },
-    );
-    out.set(light.path, altAzToXyz(altitudeDeg, azimuthDeg));
-  }
-  return out;
 }
 
 function filteredToFloat32(positions: Array<Vec3 | null>): Float32Array {
