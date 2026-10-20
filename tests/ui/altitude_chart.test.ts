@@ -11,6 +11,7 @@ import {
   chartWindowForSpan,
   computeAltitudeSeries,
   drawAltitudeChart,
+  fitText,
   type AltitudeChartData,
 } from '../../src/ui/altitude_chart';
 
@@ -133,6 +134,7 @@ describe('drawAltitudeChart', () => {
       fill: () => undefined,
       setLineDash: () => undefined,
       fillText: (text: string) => texts.push(text),
+      measureText: (text: string) => ({ width: text.length * 6 }),
       canvas,
       fillStyle: '',
       strokeStyle: '',
@@ -192,5 +194,22 @@ describe('drawAltitudeChart', () => {
     const { ctx } = makeCtx();
     const data = sampleData({ altitudes: [-40, -35, -30, -35, -40], currentMs: null });
     expect(() => drawAltitudeChart(ctx, CHART_WIDTH, CHART_HEIGHT, data)).not.toThrow();
+  });
+});
+
+describe('fitText', () => {
+  const ctx = {
+    measureText: (text: string) => ({ width: text.length * 6 }),
+  } as CanvasRenderingContext2D;
+
+  it('leaves text that fits untouched', () => {
+    expect(fitText(ctx, 'ALTITUDE · NIGHT 1', 200)).toBe('ALTITUDE · NIGHT 1');
+  });
+
+  it('shortens long text with an ellipsis so it fits', () => {
+    const fitted = fitText(ctx, 'ALTITUDE · OBJECT 1 · NIGHT 1 (A VERY LONG NAME)', 120);
+    expect(fitted.endsWith('…')).toBe(true);
+    expect(fitted.length * 6).toBeLessThanOrEqual(120);
+    expect(fitted.length).toBeGreaterThan(10);
   });
 });

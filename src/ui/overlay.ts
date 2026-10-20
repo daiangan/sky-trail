@@ -161,7 +161,7 @@ export function mountOverlay(
     }
 
     if (playback.isPlaying && point.nightIndex !== announcedNight) {
-      announce(`Night ${point.nightIndex} of ${point.totalNights}`);
+      announce(`Session ${point.nightIndex} of ${point.totalNights}`);
     }
     announcedNight = point.nightIndex;
     if (playback.isFinished && !announcedFinish) {
@@ -176,7 +176,7 @@ export function mountOverlay(
       { label: 'Subframes', value: String(point.cumulativeSubframes) },
       { label: 'Data', value: formatDataSize(point.cumulativeBytes) },
       { label: 'Date', value: (point.light.dateObs ?? '').slice(0, 10) },
-      { label: 'Night', value: `${point.nightIndex} of ${point.totalNights}` },
+      { label: 'Session', value: `${point.nightIndex} of ${point.totalNights}` },
     ];
     stats.replaceChildren(
       ...statsLines.map((line) =>
