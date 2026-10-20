@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addSession,
   allLights,
+  clearSessions,
   createProject,
   moveSession,
   removeSession,
@@ -123,5 +124,30 @@ describe('setFallbackCoords', () => {
     const p2 = setFallbackCoords(p1, { raDeg: null });
     expect(p1.fallbackObjRaDeg).toBe(10);
     expect(p2.fallbackObjRaDeg).toBeNull();
+  });
+});
+
+describe('clearSessions', () => {
+  it('removes every session and keeps the project settings', () => {
+    let project = setFallbackCoords(createProject('Target'), {
+      raDeg: 10,
+      decDeg: 20,
+      latDeg: 30,
+      lonDeg: 40,
+    });
+    project = addSession(project, addLight(createSession(0), light(0)));
+    project = addSession(project, addLight(createSession(1), light(1)));
+
+    const cleared = clearSessions(project);
+    expect(cleared.sessions).toEqual([]);
+    expect(totalLightCount(cleared)).toBe(0);
+    expect(cleared.name).toBe('Target');
+    expect(cleared.fallbackSiteLatDeg).toBe(30);
+  });
+
+  it('does not change the original project', () => {
+    const project = addSession(createProject(), createSession(0));
+    clearSessions(project);
+    expect(project.sessions).toHaveLength(1);
   });
 });

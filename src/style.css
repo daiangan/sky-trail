@@ -1407,3 +1407,10 @@ body {
 .btn--block {
   width: 100%;
 }
+
+/* A destructive action stays quiet until the pointer is on it. */
+.btn--danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: rgba(239, 83, 80, 0.55);
+  background: rgba(239, 83, 80, 0.08);
+}

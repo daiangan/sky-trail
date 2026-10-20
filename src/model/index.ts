@@ -22,6 +22,7 @@ export {
   allLights,
   createProject,
   moveSession,
+  clearSessions,
   removeSession,
   setFallbackCoords,
   totalBytes,

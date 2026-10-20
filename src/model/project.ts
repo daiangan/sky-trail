@@ -75,6 +75,11 @@ export function removeSession(project: Project, index: number): Project {
   };
 }
 
+/** The same project with every session removed; the fallback coordinates stay. */
+export function clearSessions(project: Project): Project {
+  return { ...project, sessions: [] };
+}
+
 export function moveSession(project: Project, from: number, to: number): Project {
   if (from === to) return project;
   if (from < 0 || from >= project.sessions.length) return project;

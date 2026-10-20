@@ -13,7 +13,7 @@
 import type { LightFileInfo } from '../fits';
 import type { LightFrame, Project, Session } from '../model';
 import type { PlaybackSnapshot } from '../render/playback_controller';
-import { addSession, moveSession, removeSession } from '../model/project';
+import { addSession, clearSessions, moveSession, removeSession } from '../model/project';
 import {
   addLight,
   createSession,
@@ -331,11 +331,22 @@ function replaceSession(
 }
 
 function renderActions(host: HTMLElement, state: AppState, store: Store<AppState>): void {
-  clear(host);
-  if (state.project.sessions.length === 0) return;
-
   const selectedIndex = state.selectedSessionId ?? 0;
   const disabled = state.loading !== null;
+
+  // The store updates several times a second while the animation plays. Rebuilding
+  // the buttons each time would replace them under the pointer and swallow clicks,
+  // so only rebuild when something these controls show has changed.
+  const renderKey = JSON.stringify([
+    state.project.sessions.length,
+    state.project.sessions[selectedIndex]?.name ?? null,
+    disabled,
+  ]);
+  if (host.dataset['renderKey'] === renderKey) return;
+  host.dataset['renderKey'] = renderKey;
+
+  clear(host);
+  if (state.project.sessions.length === 0) return;
 
   const addFiles = el(
     'button',
@@ -370,7 +381,30 @@ function renderActions(host: HTMLElement, state: AppState, store: Store<AppState
     host.appendChild(el('p', { class: 'session-actions__hint' }, [`Selected: ${session.name}`]));
   }
 
-  host.append(addFiles, addFolder);
+  const clearAll = el(
+    'button',
+    {
+      class: 'btn btn--ghost btn--danger',
+      type: 'button',
+      disabled,
+      id: 'clear-all',
+      title: 'Remove every session and its lights, back to the welcome screen',
+    },
+    ['Clear all sessions'],
+  );
+  clearAll.addEventListener('click', () => {
+    const sessions = store.get().project.sessions;
+    const lights = sessions.reduce((sum, s) => sum + sessionLightCount(s), 0);
+    const noun = sessions.length === 1 ? 'session' : 'sessions';
+    if (
+      !confirm(`Remove all ${sessions.length} ${noun} (${lights} lights)? This cannot be undone.`)
+    ) {
+      return;
+    }
+    store.set((s) => ({ ...s, project: clearSessions(s.project), selectedSessionId: null }));
+  });
+
+  host.append(addFiles, addFolder, clearAll);
 }
 
 async function runPick(

@@ -51,7 +51,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 
 - **Organize by Night**: Group subframes into distinct capture sessions (e.g. "Night 1", "Night 2"), then rename, reorder or delete them.
 - **Custom Palette Coding**: Assign unique colors to each session to visually distinguish target tracks across different dates. Numbered badges at the start of each arc keep nights distinguishable without relying on color.
-- **Try a Demo**: No FITS files at hand? **Try a demo** on the welcome screen loads a simulated night in which a single telescope images two invented objects one after the other, and starts playing. The objects are fictional but the sky is real: positions come from the same horizontal-coordinate maths as your own lights, with an imaging cadence that includes a dither pause after every third frame. A notification explains that it is simulated, and **Clear demo** removes it without touching anything you have added.
+- **Try a Demo**: No FITS files at hand? **Try a demo** on the welcome screen loads a simulated night in which a single telescope images two invented objects one after the other, and starts playing. The objects are fictional but the sky is real: positions come from the same horizontal-coordinate maths as your own lights, with an imaging cadence that includes a dither pause after every third frame. A notification explains that it is simulated, and **Clear demo** removes it without touching anything you have added. **Clear all sessions**, at the bottom of the session list, empties the project whenever you want to start over.
 - **Drag & Drop**: Drag entire folder trees or individual `.fits`, `.fit`, or `.fts` files directly onto the central 3D canvas, or use **Select Folder** and **Choose Files**.
 - **Works With Your Capture Software**: Headers written by N.I.N.A., ASIAIR, StellaVita/ToupTek, KStars/Ekos, APT, SharpCap and Siril are understood (see [Supported FITS headers](#supported-fits-headers)).
 - **Manual Coordinates Fallback**: Built-in dialog to provide manual target coordinates (RA/Dec) or observatory site location (Lat/Lon) if your camera software didn't populate them, with a button to detect your current location. Coordinates persist automatically across browser visits.
@@ -113,7 +113,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture, fat lines for the arcs)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (27 suites, 226 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (27 suites, 228 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 - **CI/CD**: GitHub Actions type-check, lint, test and build every pull request and every push to `main`; the same checks gate the deployment to GitHub Pages.
 
@@ -211,7 +211,7 @@ src/
 ├── render/     # Three.js dome (wireframe, arcs, camera framing), playback controller & shared defaults
 └── ui/         # Session manager, controls panel, HUD overlay, altitude chart, view toolbar,
                 # mobile drawers, notifications, file loading & dialogs
-tests/          # Vitest test suites (226 tests), mirroring the structure of src/
+tests/          # Vitest test suites (228 tests), mirroring the structure of src/
 ```
 
 ---
