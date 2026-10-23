@@ -16,7 +16,7 @@ import { computeAltAz } from '../astro/altaz';
 import { parseFitsDate } from '../astro/date_parse';
 import { hasPosition, type LightFrame } from './light_frame';
 import type { Project } from './project';
-import { allLights } from './project';
+import { allLights, hasSameLights } from './project';
 import {
   projectFallback,
   resolveLightPosition,
@@ -75,6 +75,25 @@ export function buildTimeline(project: Project, altaz: AltAzFn = defaultAltAz): 
       cumulativeBytes: cumBytes,
     };
   });
+}
+
+let cachedProject: Project | null = null;
+let cachedTimeline: TimelinePoint[] = [];
+
+/**
+ * The timeline of `project`, computed once and shared. The dome, the overlay and
+ * the load summary all need it for the same project, and renaming or recolouring
+ * a session does not change it, so the previous result is reused in that case.
+ * Callers must treat the returned list as read-only.
+ */
+export function timelineOf(project: Project): TimelinePoint[] {
+  if (cachedProject && hasSameLights(cachedProject, project)) {
+    cachedProject = project;
+    return cachedTimeline;
+  }
+  cachedTimeline = buildTimeline(project);
+  cachedProject = project;
+  return cachedTimeline;
 }
 
 /**

@@ -23,4 +23,11 @@ describe('describeIngest', () => {
     expect(summary.message).toContain('Added 10 lights to Night 1.');
     expect(summary.message).toContain("12 of 40 can't be placed on the dome");
   });
+
+  it('mentions frames skipped because they were already loaded', () => {
+    expect(describeIngest(5, 'Night 1', 5, 0, 3).message).toBe(
+      'Added 5 lights to Night 1. 3 files already loaded, skipped.',
+    );
+    expect(describeIngest(5, 'Night 1', 5, 0, 1).message).toContain('1 file already loaded');
+  });
 });

@@ -12,12 +12,13 @@ import { mountOverlay } from './ui/overlay';
 import { mountSessionPanel, type AppState } from './ui/session_panel';
 import { mountMobileLayout } from './ui/mobile_layout';
 import { mountViewToolbar } from './ui/view_toolbar';
-import { reportIngestFailure, setCoordinatesOpener } from './ui/ingest_feedback';
+import { setCoordinatesOpener } from './ui/ingest_feedback';
+import { loadFiles } from './ui/ingest';
 import { Store } from './ui/store';
 import { loadOverlayPositions, saveOverlayPositions } from './ui/overlay_layout';
 import { loadDemo } from './ui/demo_loader';
 import { showToast } from './ui/toast';
-import { setupDragAndDrop, ingestFiles } from './ui/drag_drop';
+import { setupDragAndDrop } from './ui/drag_drop';
 import { pickDirectory, pickFiles } from './ui/file_io';
 
 const root = document.querySelector<HTMLDivElement>('#app');
@@ -110,15 +111,6 @@ mountMobileLayout({
 mountSessionPanel(sessionPanel, store);
 const overlay = mountOverlay(overlayLayer, store);
 
-async function pickAndIngest(picker: () => Promise<{ files: File[] } | null>): Promise<void> {
-  try {
-    const picked = await picker();
-    if (picked) await ingestFiles(picked.files, store);
-  } catch (error) {
-    reportIngestFailure(store, error);
-  }
-}
-
 /** True when the 3D view is not ready yet; the demo starts playing as soon as it is. */
 let playDemoWhenReady = false;
 
@@ -134,8 +126,8 @@ setupDragAndDrop({
   canvasArea,
   store,
   onLoadDemo: loadDemoAndPlay,
-  onPickFolder: () => pickAndIngest(pickDirectory),
-  onPickFiles: () => pickAndIngest(pickFiles),
+  onPickFolder: () => loadFiles(store, (options) => pickDirectory(options)),
+  onPickFiles: () => loadFiles(store, () => pickFiles()),
 });
 
 const coordinatesDialog = mountCoordinatesDialog(coordinatesDialogRoot, store);
@@ -158,6 +150,7 @@ const controlsApi = mountControlsPanel(controlsArea, store, {
 });
 
 let lastOverlayPositions = store.get().overlayPositions;
+let lastPlayback = store.get().playback;
 store.subscribe((state) => {
   if (state.overlayPositions !== lastOverlayPositions) {
     lastOverlayPositions = state.overlayPositions;
@@ -167,7 +160,10 @@ store.subscribe((state) => {
     lastProject = state.project;
     domeView.setProject(state.project);
   }
-  controlsApi.setPlaybackState(store.get().playback);
+  if (state.playback !== lastPlayback) {
+    lastPlayback = state.playback;
+    controlsApi.setPlaybackState(state.playback);
+  }
 });
 
 controlsApi.setPlaybackState(store.get().playback);

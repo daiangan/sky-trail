@@ -614,6 +614,22 @@ body {
   transition: width 120ms linear;
 }
 
+.session-progress__fill--indeterminate {
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .session-progress__fill--indeterminate {
+    animation: session-progress-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes session-progress-pulse {
+  50% {
+    opacity: 0.15;
+  }
+}
+
 .session-progress__text {
   font-size: 0.75rem;
   color: var(--fg-faint);

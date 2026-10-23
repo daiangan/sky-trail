@@ -107,3 +107,23 @@ export function setFallbackCoords(
     fallbackSiteLonDeg: coords.lonDeg !== undefined ? coords.lonDeg : project.fallbackSiteLonDeg,
   };
 }
+
+/**
+ * True when both projects hold the same lights in the same sessions with the
+ * same fallback coordinates. Renaming or recolouring a session keeps each
+ * session's `lights` array, so nothing that depends on positions has to be
+ * recomputed.
+ */
+export function hasSameLights(a: Project, b: Project): boolean {
+  if (a === b) return true;
+  if (a.sessions.length !== b.sessions.length) return false;
+  if (
+    a.fallbackObjRaDeg !== b.fallbackObjRaDeg ||
+    a.fallbackObjDecDeg !== b.fallbackObjDecDeg ||
+    a.fallbackSiteLatDeg !== b.fallbackSiteLatDeg ||
+    a.fallbackSiteLonDeg !== b.fallbackSiteLonDeg
+  ) {
+    return false;
+  }
+  return a.sessions.every((session, i) => session.lights === b.sessions[i]!.lights);
+}

@@ -10,12 +10,10 @@
  * (add/remove/reorder) trigger a full re-render.
  */
 
-import type { LightFileInfo } from '../fits';
-import type { LightFrame, Project, Session } from '../model';
+import type { Project, Session } from '../model';
 import type { PlaybackSnapshot } from '../render/playback_controller';
 import { addSession, clearSessions, moveSession, removeSession } from '../model/project';
 import {
-  addLight,
   createSession,
   renameSession,
   sessionDate,
@@ -25,8 +23,8 @@ import {
 } from '../model/session';
 import { formatDuration } from '../model/timeline';
 import { clear, confirm, el } from './dom';
-import { hasFitsExtension, pickDirectory, pickFiles, readLightBatches } from './file_io';
-import { reportIngestFailure, reportIngestSuccess, reportNoFitsFiles } from './ingest_feedback';
+import { pickDirectory, pickFiles } from './file_io';
+import { cancelIngest, loadFiles } from './ingest';
 import type { OverlayPositions } from './overlay_layout';
 import type { Store } from './store';
 
@@ -40,7 +38,12 @@ export interface OverlayVisibility {
 export interface AppState {
   project: Project;
   selectedSessionId: number | null;
-  loading: { current: number; total: number; fileName: string } | null;
+  loading: {
+    phase: 'scanning' | 'reading';
+    current: number;
+    total: number;
+    fileName: string;
+  } | null;
   playback: PlaybackSnapshot;
   overlay: OverlayVisibility;
   /** Where the user has dragged the movable overlays; empty means the default corners. */
@@ -67,10 +70,24 @@ export function mountSessionPanel(root: HTMLElement, store: Store<AppState>): ()
     ]),
   );
 
+  // The store also updates for playback ticks and load progress; each part only
+  // redraws when the slice of state it shows has changed.
+  let listState: { project: Project; selected: number | null } | null = null;
+  let progressState: AppState['loading'] | undefined;
   const unsubscribe = store.subscribe((state) => {
-    renderList(listEl, state, store);
+    if (
+      !listState ||
+      listState.project !== state.project ||
+      listState.selected !== state.selectedSessionId
+    ) {
+      listState = { project: state.project, selected: state.selectedSessionId };
+      renderList(listEl, state, store);
+    }
     renderActions(actionsEl, state, store);
-    renderProgress(progressEl, state);
+    if (progressState !== state.loading) {
+      progressState = state.loading;
+      renderProgress(progressEl, state);
+    }
   });
 
   const createBtn = root.querySelector<HTMLButtonElement>('#session-create')!;
@@ -370,10 +387,10 @@ function renderActions(host: HTMLElement, state: AppState, store: Store<AppState
   );
 
   addFiles.addEventListener('click', () => {
-    void runPick(pickFiles, store);
+    void loadFiles(store, () => pickFiles());
   });
   addFolder.addEventListener('click', () => {
-    void runPick(pickDirectory, store);
+    void loadFiles(store, (options) => pickDirectory(options));
   });
 
   const session = state.project.sessions[selectedIndex];
@@ -407,96 +424,40 @@ function renderActions(host: HTMLElement, state: AppState, store: Store<AppState
   host.append(addFiles, addFolder, clearAll);
 }
 
-async function runPick(
-  picker: () => Promise<{ files: File[] } | null>,
-  store: Store<AppState>,
-): Promise<void> {
-  let pickResult;
-  try {
-    pickResult = await picker();
-  } catch (error) {
-    reportIngestFailure(store, error);
-    return;
-  }
-  if (!pickResult) return;
-
-  const files = pickResult.files.filter((file) => hasFitsExtension(file.name));
-  if (files.length === 0) {
-    reportNoFitsFiles();
-    return;
-  }
-
-  let infos;
-  try {
-    infos = await readLightBatches(files, {
-      onProgress: (current, total, fileName) => {
-        store.set((s) => ({ ...s, loading: { current, total, fileName } }));
-      },
-    });
-  } catch (error) {
-    reportIngestFailure(store, error);
-    return;
-  }
-
-  store.set((s) => {
-    let project = s.project;
-    let targetIndex = s.selectedSessionId;
-    if (project.sessions.length === 0) {
-      const session = createSession(0, 'Night 1');
-      project = addSession(project, session);
-      targetIndex = 0;
-    } else if (targetIndex === null) {
-      targetIndex = 0;
-    }
-
-    const session = project.sessions[targetIndex];
-    if (!session) return { ...s, loading: null };
-    let next = session;
-    for (let i = 0; i < files.length; i += 1) {
-      next = addLight(next, lightFrameFromInfo(infos[i]!, files[i]!.name));
-    }
-    return {
-      ...s,
-      project: replaceSession(project, targetIndex, () => next),
-      selectedSessionId: targetIndex,
-      loading: null,
-    };
-  });
-  reportIngestSuccess(store, files.length);
-}
-
-export function lightFrameFromInfo(info: LightFileInfo, name: string): LightFrame {
-  return {
-    path: name,
-    dateObs: info.dateObs,
-    exptime: info.exptime,
-    filterName: info.filterName,
-    sizeBytes: info.sizeBytes,
-    objRaDeg: info.objRaDeg,
-    objDecDeg: info.objDecDeg,
-    siteLatDeg: info.siteLatDeg,
-    siteLonDeg: info.siteLonDeg,
-    altDeg: null,
-    azDeg: null,
-  };
-}
-
 function renderProgress(host: HTMLElement, state: AppState): void {
-  clear(host);
-  if (!state.loading) return;
-  const { current, total, fileName } = state.loading;
-  const pct = total === 0 ? 0 : Math.round((current / total) * 100);
-  host.appendChild(
-    el('div', { class: 'session-progress__inner' }, [
+  const loading = state.loading;
+  if (!loading) {
+    clear(host);
+    return;
+  }
+
+  let inner = host.querySelector<HTMLElement>('.session-progress__inner');
+  if (!inner) {
+    clear(host);
+    const cancel = el('button', { class: 'btn btn--ghost', type: 'button' }, ['Cancel']);
+    cancel.addEventListener('click', cancelIngest);
+    inner = el('div', { class: 'session-progress__inner', role: 'status' }, [
       el('div', { class: 'session-progress__bar' }, [
-        el('div', {
-          class: 'session-progress__fill',
-          style: `width: ${pct}%`,
-        }),
+        el('div', { class: 'session-progress__fill' }),
       ]),
-      el('div', { class: 'session-progress__text' }, [
-        `Reading ${current} of ${total} (${pct}%) — ${fileName}`,
-      ]),
-    ]),
-  );
+      el('div', { class: 'session-progress__text' }),
+      cancel,
+    ]);
+    host.appendChild(inner);
+  }
+
+  const fill = inner.querySelector<HTMLElement>('.session-progress__fill')!;
+  const text = inner.querySelector<HTMLElement>('.session-progress__text')!;
+  if (loading.phase === 'scanning') {
+    // The number of files is not known until the folder has been listed.
+    fill.style.width = '100%';
+    fill.classList.add('session-progress__fill--indeterminate');
+    text.textContent = `Looking for FITS files… ${loading.current} found`;
+    return;
+  }
+  const { current, total, fileName } = loading;
+  const pct = total === 0 ? 0 : Math.round((current / total) * 100);
+  fill.classList.remove('session-progress__fill--indeterminate');
+  fill.style.width = `${pct}%`;
+  text.textContent = `Reading ${current} of ${total} (${pct}%) — ${fileName}`;
 }

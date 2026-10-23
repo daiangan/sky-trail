@@ -18,12 +18,7 @@
  * the same visual the user sees.
  */
 
-import {
-  buildTimeline,
-  formatDuration,
-  formatDataSize,
-  type TimelinePoint,
-} from '../model/timeline';
+import { timelineOf, formatDuration, formatDataSize, type TimelinePoint } from '../model/timeline';
 import type { OverlayVisibility } from './session_panel';
 import type { Store } from './store';
 import type { AppState } from './session_panel';
@@ -122,7 +117,7 @@ export function mountOverlay(
     // colours changed and the cached timeline and chart are stale.
     if (state.project !== lastProject) {
       lastProject = state.project;
-      lastTimeline = state.project.sessions.length > 0 ? buildTimeline(state.project) : [];
+      lastTimeline = state.project.sessions.length > 0 ? timelineOf(state.project) : [];
       cachedChartKey = null;
       cachedChartBase = null;
     }
@@ -178,14 +173,23 @@ export function mountOverlay(
       { label: 'Date', value: (point.light.dateObs ?? '').slice(0, 10) },
       { label: 'Session', value: `${point.nightIndex} of ${point.totalNights}` },
     ];
-    stats.replaceChildren(
-      ...statsLines.map((line) =>
-        el('div', { class: 'overlay__row' }, [
-          el('span', { class: 'overlay__label' }, [line.label]),
-          el('span', { class: 'overlay__value' }, [line.value]),
-        ]),
-      ),
-    );
+    // The rows stay in place and only their values change, so a frame costs four text updates.
+    if (stats.children.length !== statsLines.length) {
+      stats.replaceChildren(
+        ...statsLines.map((line) =>
+          el('div', { class: 'overlay__row' }, [
+            el('span', { class: 'overlay__label' }, [line.label]),
+            el('span', { class: 'overlay__value' }, [line.value]),
+          ]),
+        ),
+      );
+    } else {
+      statsLines.forEach((line, i) => {
+        const row = stats.children[i]!;
+        row.children[0]!.textContent = line.label;
+        row.children[1]!.textContent = line.value;
+      });
+    }
 
     currentSnapshot = {
       counterText: formatDuration(point.cumulativeExptimeS),
@@ -289,7 +293,24 @@ export function mountOverlay(
   for (const { id, element } of movable) makeDraggable(id, element);
 
   // Positions depend on the size of the overlays, which change with their content.
+  let seen: Pick<AppState, 'project' | 'playback' | 'overlay' | 'overlayPositions'> | null = null;
   const recompute = (state: AppState) => {
+    // Load progress and session selection do not change what the overlay shows.
+    if (
+      seen &&
+      seen.project === state.project &&
+      seen.playback === state.playback &&
+      seen.overlay === state.overlay &&
+      seen.overlayPositions === state.overlayPositions
+    ) {
+      return;
+    }
+    seen = {
+      project: state.project,
+      playback: state.playback,
+      overlay: state.overlay,
+      overlayPositions: state.overlayPositions,
+    };
     renderContent(state);
     placeOverlays(state.overlayPositions);
   };

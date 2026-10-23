@@ -113,7 +113,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture, fat lines for the arcs)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (28 suites, 232 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (31 suites, 259 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 - **CI/CD**: GitHub Actions type-check, lint, test and build every pull request and every push to `main`; the same checks gate the deployment to GitHub Pages.
 
@@ -145,6 +145,8 @@ Timestamps without a time zone are treated as UTC, as the FITS standard prescrib
 
 - **Small First Load**: The panels and the welcome screen render from about 27 kB of gzipped JavaScript and CSS. Three.js (about 142 kB gzipped, and the part that cannot shrink further) and the 3D view load right after, in the background, and the dome fades in when they arrive. Anything you do in the meantime is carried over: dropped files are loaded and handed to the view as soon as it starts, and slider values become its initial settings.
 - **Cache-Friendly Chunks**: Three.js and astronomy-engine ship as separate files that rarely change, so returning visitors reuse them from the browser cache across deploys.
+- **Large Captures**: Headers are read twelve files at a time, so thousands of lights load in seconds instead of waiting on each file in turn. Folders are searched through their subfolders, with a live count while they are listed, then a progress bar with a **Cancel** button (cancelling adds nothing). Frames that are already loaded are skipped, so adding the same folder twice does not duplicate lights, and hidden `._` companion files are ignored.
+- **Quiet When Idle**: The 3D view stops drawing when nothing moves, drops to 30 frames per second while only the slow camera drift or the marker pulse is running, and caps the render resolution at 2x on very dense screens. Renaming or recolouring a session updates the colours in place and no longer restarts the animation.
 - **Graceful Failure**: If the 3D view cannot start (a failed download or no WebGL), a persistent notification explains it and the rest of the app keeps working.
 
 ### Demo Data
@@ -217,10 +219,11 @@ src/
 ├── export/     # Video exporter (offscreen canvas compositing & MediaRecorder)
 ├── fits/       # Low-level FITS header parser & metadata extraction
 ├── model/      # Data models (LightFrame, Session, Project), fallback resolution, timeline & persistence
+├── util/       # Bounded-concurrency helper used to read many files at once
 ├── render/     # Three.js dome (wireframe, arcs, camera framing), playback controller & shared defaults
 └── ui/         # Session manager, controls panel, HUD overlay, altitude chart, view toolbar,
                 # mobile drawers, notifications, file loading & dialogs
-tests/          # Vitest test suites (232 tests), mirroring the structure of src/
+tests/          # Vitest test suites (259 tests), mirroring the structure of src/
 ```
 
 ---
