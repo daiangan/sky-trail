@@ -7,13 +7,12 @@
  * visible as an alternative."
  */
 
-import { hasFitsExtension, readLightBatches } from './file_io';
+import { isReadableFits, type ScanOptions } from './file_io';
 import { clear, el } from './dom';
-import { addLight, createSession } from '../model/session';
-import { addSession } from '../model/project';
-import { reportIngestFailure, reportIngestSuccess, reportNoFitsFiles } from './ingest_feedback';
-import { lightFrameFromInfo, type AppState } from './session_panel';
+import { loadFiles } from './ingest';
+import type { AppState } from './session_panel';
 import type { Store } from './store';
+import { abortError, mapConcurrent } from '../util/pool';
 
 export interface DragDropOptions {
   canvasArea: HTMLElement;
@@ -126,8 +125,9 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
     dropZoneOverlay.classList.remove('canvas-dropzone--active');
 
     if (!e.dataTransfer) return;
-    const files = await extractFilesFromDrop(e.dataTransfer);
-    await ingestFiles(files, store);
+    // The dropped items are only readable until the first await, so gathering starts right away.
+    const dataTransfer = e.dataTransfer;
+    await loadFiles(store, (options) => extractFilesFromDrop(dataTransfer, options));
   };
 
   canvasArea.addEventListener('dragenter', onDragEnter);
@@ -148,114 +148,64 @@ export function setupDragAndDrop(options: DragDropOptions): () => void {
   };
 }
 
-export async function ingestFiles(files: File[], store: Store<AppState>): Promise<void> {
-  const fitsFiles = files.filter((f) => hasFitsExtension(f.name));
-  if (fitsFiles.length === 0) {
-    reportNoFitsFiles();
-    return;
-  }
+const DROP_READ_CONCURRENCY = 12;
+const MAX_FOLDER_DEPTH = 8;
 
-  let infos;
-  try {
-    infos = await readLightBatches(fitsFiles, {
-      onProgress: (current, total, fileName) => {
-        store.set((s) => ({ ...s, loading: { current, total, fileName } }));
-      },
+/** Files and folders (with their subfolders) dropped onto the canvas, FITS files only. */
+async function extractFilesFromDrop(
+  dataTransfer: DataTransfer,
+  options: Required<ScanOptions>,
+): Promise<File[]> {
+  const entries: FileSystemFileEntry[] = [];
+  const looseFiles: File[] = [];
+
+  const readAll = (reader: FileSystemDirectoryReader) =>
+    new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject);
     });
-  } catch (error) {
-    reportIngestFailure(store, error);
-    return;
-  }
 
-  store.set((s) => {
-    let project = s.project;
-    let selectedId = s.selectedSessionId;
-
-    // If there are no sessions, automatically create "Night 1"
-    if (project.sessions.length === 0) {
-      const newSession = createSession(0, 'Night 1');
-      project = addSession(project, newSession);
-      selectedId = 0;
-    } else if (selectedId === null) {
-      selectedId = project.sessions.length - 1;
-    }
-
-    const session = project.sessions[selectedId];
-    if (!session) return { ...s, loading: null };
-
-    let updatedSession = session;
-    for (let i = 0; i < fitsFiles.length; i += 1) {
-      updatedSession = addLight(updatedSession, lightFrameFromInfo(infos[i]!, fitsFiles[i]!.name));
-    }
-
-    const sessions = project.sessions.slice();
-    sessions[selectedId] = updatedSession;
-    project = { ...project, sessions };
-
-    return {
-      ...s,
-      project,
-      selectedSessionId: selectedId,
-      loading: null,
-    };
-  });
-  reportIngestSuccess(store, fitsFiles.length);
-}
-
-async function extractFilesFromDrop(dataTransfer: DataTransfer): Promise<File[]> {
-  const items = Array.from(dataTransfer.items ?? []);
-  const files: File[] = [];
-
-  const traverse = async (entry: FileSystemEntry | null) => {
-    if (!entry) return;
+  const walk = async (entry: FileSystemEntry, depth: number): Promise<void> => {
+    if (options.signal.aborted) throw abortError();
     if (entry.isFile) {
-      const fileEntry = entry as FileSystemFileEntry;
-      const file = await new Promise<File>((resolve, reject) => {
-        fileEntry.file(resolve, reject);
-      });
-      if (hasFitsExtension(file.name)) {
-        files.push(file);
+      if (isReadableFits(entry.name)) {
+        entries.push(entry as FileSystemFileEntry);
+        options.onScan(entries.length + looseFiles.length);
       }
-    } else if (entry.isDirectory) {
-      const dirReader = (entry as FileSystemDirectoryEntry).createReader();
-      const readEntries = () =>
-        new Promise<FileSystemEntry[]>((resolve, reject) => {
-          dirReader.readEntries(resolve, reject);
-        });
-      let entries = await readEntries();
-      while (entries.length > 0) {
-        for (const child of entries) {
-          await traverse(child);
-        }
-        entries = await readEntries();
+    } else if (entry.isDirectory && depth <= MAX_FOLDER_DEPTH && !entry.name.startsWith('.')) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // readEntries returns the folder in chunks until it comes back empty.
+      let children = await readAll(reader);
+      while (children.length > 0) {
+        for (const child of children) await walk(child, depth + 1);
+        children = await readAll(reader);
       }
     }
   };
 
-  const promises: Promise<void>[] = [];
-  for (const item of items) {
-    if (typeof item.webkitGetAsEntry === 'function') {
-      const entry = item.webkitGetAsEntry();
-      if (entry) {
-        promises.push(traverse(entry));
-        continue;
-      }
+  // Entries must be taken from the items before any await: the browser
+  // invalidates the drop data once the event handler yields.
+  const roots: FileSystemEntry[] = [];
+  for (const item of Array.from(dataTransfer.items ?? [])) {
+    const entry = typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null;
+    if (entry) {
+      roots.push(entry);
+      continue;
     }
     const file = item.getAsFile();
-    if (file && hasFitsExtension(file.name)) {
-      files.push(file);
+    if (file && isReadableFits(file.name)) looseFiles.push(file);
+  }
+  if (roots.length === 0 && looseFiles.length === 0) {
+    for (const file of Array.from(dataTransfer.files ?? [])) {
+      if (isReadableFits(file.name)) looseFiles.push(file);
     }
   }
 
-  if (promises.length > 0) {
-    await Promise.all(promises);
-  } else if (files.length === 0) {
-    for (const f of Array.from(dataTransfer.files ?? [])) {
-      if (hasFitsExtension(f.name)) {
-        files.push(f);
-      }
-    }
-  }
-
-  return files;
+  for (const root of roots) await walk(root, 0);
+  const listed = await mapConcurrent(
+    entries,
+    DROP_READ_CONCURRENCY,
+    (entry) => new Promise<File>((resolve, reject) => entry.file(resolve, reject)),
+    { signal: options.signal },
+  );
+  return [...looseFiles, ...listed];
 }

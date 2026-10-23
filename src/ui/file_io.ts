@@ -14,15 +14,36 @@
 
 import type { LightFileInfo } from '../fits';
 import { readLightBlob } from '../fits';
+import { abortError, mapConcurrent } from '../util/pool';
 
 const FITS_EXTENSIONS = ['.fit', '.fits', '.fts'] as const;
+
+/** Files opened at once: enough to hide per-file latency, few enough not to flood slow disks. */
+const READ_CONCURRENCY = 12;
+/** Folders nested deeper than this are ignored, which also stops runaway links. */
+const MAX_FOLDER_DEPTH = 8;
 
 export interface FilePickOptions {
   multiple?: boolean;
 }
 
+export interface ScanOptions {
+  signal?: AbortSignal;
+  /** Reports how many FITS files have been found so far while a folder is being listed. */
+  onScan?: (found: number) => void;
+}
+
 export interface FileSource {
   files: File[];
+}
+
+/**
+ * A FITS file worth reading: right extension, and not one of the hidden
+ * companions macOS writes next to every file on some drives (`._Light_001.fits`).
+ */
+export function isReadableFits(name: string): boolean {
+  const base = name.slice(name.lastIndexOf('/') + 1);
+  return hasFitsExtension(base) && !base.startsWith('.');
 }
 
 export async function pickFiles(options: FilePickOptions = {}): Promise<FileSource | null> {
@@ -42,8 +63,8 @@ export async function pickFiles(options: FilePickOptions = {}): Promise<FileSour
           },
         ],
       } as never);
-      const files = await Promise.all(handles.map((h) => h.getFile()));
-      return { files };
+      const files = await mapConcurrent(handles, READ_CONCURRENCY, (h) => h.getFile());
+      return { files: files.filter((f) => isReadableFits(f.name)) };
     } catch (err) {
       if (isUserCancelled(err)) return null;
       throw err;
@@ -52,7 +73,7 @@ export async function pickFiles(options: FilePickOptions = {}): Promise<FileSour
   return pickViaInput({ multiple: options.multiple ?? true, accept: FITS_EXTENSIONS });
 }
 
-export async function pickDirectory(): Promise<FileSource | null> {
+export async function pickDirectory(options: ScanOptions = {}): Promise<FileSource | null> {
   const picker = (
     globalThis as {
       showDirectoryPicker?: (...args: unknown[]) => Promise<FileSystemDirectoryHandle>;
@@ -61,23 +82,42 @@ export async function pickDirectory(): Promise<FileSource | null> {
   if (typeof picker === 'function') {
     try {
       const handle = await picker({ mode: 'read' } as never);
-      const files: File[] = [];
-      const iterable = handle as unknown as {
-        entries(): AsyncIterable<[string, FileSystemHandle]>;
-      };
-      for await (const [name, entry] of iterable.entries()) {
-        if (entry.kind === 'file' && hasFitsExtension(name)) {
-          const fileHandle = entry as FileSystemFileHandle;
-          files.push(await fileHandle.getFile());
-        }
-      }
+      const found: FileSystemFileHandle[] = [];
+      await listDirectory(handle, found, 0, options);
+      const files = await mapConcurrent(found, READ_CONCURRENCY, (h) => h.getFile(), {
+        signal: options.signal,
+      });
       return { files };
     } catch (err) {
-      if (isUserCancelled(err)) return null;
+      // A cancel from the progress bar is ours to report; a cancelled picker is not an error.
+      if (!options.signal?.aborted && isUserCancelled(err)) return null;
       throw err;
     }
   }
   return pickViaInput({ multiple: true, accept: FITS_EXTENSIONS, directory: true });
+}
+
+/** Collects the FITS file handles of a folder and, recursively, of its subfolders. */
+async function listDirectory(
+  directory: FileSystemDirectoryHandle,
+  found: FileSystemFileHandle[],
+  depth: number,
+  options: ScanOptions,
+): Promise<void> {
+  const iterable = directory as unknown as {
+    entries(): AsyncIterable<[string, FileSystemHandle]>;
+  };
+  for await (const [name, entry] of iterable.entries()) {
+    if (options.signal?.aborted) throw abortError();
+    if (entry.kind === 'file') {
+      if (isReadableFits(name)) {
+        found.push(entry as FileSystemFileHandle);
+        options.onScan?.(found.length);
+      }
+    } else if (depth < MAX_FOLDER_DEPTH && !name.startsWith('.')) {
+      await listDirectory(entry as FileSystemDirectoryHandle, found, depth + 1, options);
+    }
+  }
 }
 
 interface InputPickOptions {
@@ -106,7 +146,7 @@ function pickViaInput(options: InputPickOptions): Promise<FileSource | null> {
     };
 
     input.addEventListener('change', () => {
-      const files = Array.from(input.files ?? []).filter((f) => hasFitsExtension(f.name));
+      const files = Array.from(input.files ?? []).filter((f) => isReadableFits(f.name));
       cleanup();
       resolve({ files });
     });
@@ -139,19 +179,19 @@ function isUserCancelled(err: unknown): boolean {
 }
 
 export interface ReadBatchOptions {
+  /** `current` counts files finished so far; `currentFile` is the one that just finished. */
   onProgress?: (current: number, total: number, currentFile: string) => void;
+  signal?: AbortSignal;
 }
 
-export async function readLightBatches(
+/** Reads the headers of all `files`, several at a time; results keep the order of `files`. */
+export function readLightBatches(
   files: readonly File[],
   options: ReadBatchOptions = {},
 ): Promise<LightFileInfo[]> {
   const total = files.length;
-  const out: LightFileInfo[] = [];
-  for (let i = 0; i < total; i += 1) {
-    const file = files[i]!;
-    options.onProgress?.(i + 1, total, file.name);
-    out.push(await readLightBlob(file));
-  }
-  return out;
+  return mapConcurrent(files, READ_CONCURRENCY, (file) => readLightBlob(file), {
+    signal: options.signal,
+    onItemDone: (done, index) => options.onProgress?.(done, total, files[index]!.name),
+  });
 }

@@ -77,6 +77,12 @@ export function addLight(session: Session, light: LightFrame): Session {
   return { ...session, lights: [...session.lights, light] };
 }
 
+/** Adds many lights with a single copy; `addLight` in a loop copies the list once per light. */
+export function addLights(session: Session, lights: readonly LightFrame[]): Session {
+  if (lights.length === 0) return session;
+  return { ...session, lights: [...session.lights, ...lights] };
+}
+
 export function renameSession(session: Session, name: string): Session {
   return { ...session, name };
 }

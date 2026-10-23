@@ -5,7 +5,7 @@
  * animation without a word.
  */
 
-import { buildTimeline } from '../model/timeline';
+import { timelineOf } from '../model/timeline';
 import type { AppState } from './session_panel';
 import type { Store } from './store';
 import { showToast } from './toast';
@@ -28,6 +28,14 @@ export function reportNoFitsFiles(): void {
   });
 }
 
+export function reportAllDuplicates(count: number): void {
+  showToast({
+    kind: 'info',
+    message:
+      count === 1 ? 'That file is already loaded.' : `Those ${count} files are already loaded.`,
+  });
+}
+
 export function reportIngestFailure(store: Store<AppState>, error: unknown): void {
   store.set((s) => ({ ...s, loading: null }));
   const detail = error instanceof Error && error.message ? ` (${error.message})` : '';
@@ -45,9 +53,11 @@ export function describeIngest(
   sessionName: string | null,
   totalLights: number,
   unplaced: number,
+  skipped = 0,
 ): IngestSummary {
   const where = sessionName ? ` to ${sessionName}` : '';
-  const base = `Added ${plural(added, 'light')}${where}.`;
+  const duplicates = skipped > 0 ? ` ${plural(skipped, 'file')} already loaded, skipped.` : '';
+  const base = `Added ${plural(added, 'light')}${where}.${duplicates}`;
   if (unplaced > 0) {
     return {
       kind: 'warning',
@@ -58,16 +68,16 @@ export function describeIngest(
 }
 
 /** Summarises a finished load: what was added and what can't be placed on the dome. */
-export function reportIngestSuccess(store: Store<AppState>, added: number): void {
+export function reportIngestSuccess(store: Store<AppState>, added: number, skipped = 0): void {
   const state = store.get();
   const session =
     state.selectedSessionId === null ? undefined : state.project.sessions[state.selectedSessionId];
 
   let total = 0;
   for (const s of state.project.sessions) total += s.lights.length;
-  const unplaced = total - buildTimeline(state.project).length;
+  const unplaced = total - timelineOf(state.project).length;
 
-  const summary = describeIngest(added, session?.name ?? null, total, unplaced);
+  const summary = describeIngest(added, session?.name ?? null, total, unplaced, skipped);
   if (summary.kind === 'warning') {
     showToast({
       kind: 'warning',

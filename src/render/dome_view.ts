@@ -23,7 +23,8 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 import type { Project } from '../model';
-import { buildTimeline, type TimelinePoint } from '../model/timeline';
+import { hasSameLights } from '../model/project';
+import { timelineOf, type TimelinePoint } from '../model/timeline';
 import { computeDomeFraming } from './camera_framing';
 import { DOME_RADIUS, type Vec3 } from './coordinates';
 import {
@@ -76,6 +77,15 @@ interface CameraTween {
 const RECENTER_SECONDS = 0.55;
 const ZOOM_STEP = 1.25;
 const MARKER_PULSE_HZ = 0.7;
+/** A retina canvas at 3x or more costs a lot of fill rate for no visible gain on thin lines. */
+const MAX_PIXEL_RATIO = 2;
+/**
+ * When only a slow drift or the marker pulse is moving, 30 frames a second look the same.
+ * A little under 1000/30 so frame times that jitter around 33 ms do not drop to 20 fps.
+ */
+const AMBIENT_FRAME_MS = 29;
+/** After the last interaction or change, keep drawing at full rate for the camera's damping to settle. */
+const SETTLE_MS = 1500;
 
 export class DomeView {
   private readonly canvas: HTMLCanvasElement;
@@ -103,6 +113,15 @@ export class DomeView {
   private cameraRotationDegPerSec: number;
   private rafHandle: number | null = null;
   private lastFrameTime: number | null = null;
+  private lastRenderTime = 0;
+  /** Something changed that the next frame must show, even if nothing is animating. */
+  private dirty = true;
+  /** Frames render at full rate until this time (ms, same clock as requestAnimationFrame). */
+  private fullRateUntil = 0;
+  private interacting = false;
+  /** Revealed points per session and the reveal count they were computed for; -1 means unknown. */
+  private sessionRevealCounts: number[] = [];
+  private lastRevealCount = -1;
   private project: Project | null = null;
   private timeline: TimelinePoint[] = [];
   /** Dome position of each timeline point, by its index in `timeline`. */
@@ -132,6 +151,7 @@ export class DomeView {
     if (options.defaultPointsPerSecond !== undefined) {
       this.playback.setPointsPerSecond(options.defaultPointsPerSecond);
     }
+    this.playback.subscribe(() => this.markDirty());
     if (options.onPlaybackChange) {
       this.playback.subscribe(options.onPlaybackChange);
     }
@@ -142,7 +162,7 @@ export class DomeView {
       alpha: false,
       preserveDrawingBuffer: true,
     });
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.setClearColor(options.backgroundColor ?? 0x080a12, 1);
 
     this.scene = new THREE.Scene();
@@ -173,6 +193,8 @@ export class DomeView {
     this.controls.minDistance = this.radius * 1.2;
     this.controls.maxDistance = this.radius * 12;
     this.controls.addEventListener('start', this.handleCameraStart);
+    this.controls.addEventListener('start', this.handleInteractionStart);
+    this.controls.addEventListener('end', this.handleInteractionEnd);
     this.canvas.addEventListener('dblclick', this.handleDoubleClick);
 
     this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
@@ -310,8 +332,19 @@ export class DomeView {
   }
 
   setProject(project: Project): void {
+    const previous = this.project;
     this.project = project;
+    // Renaming or recolouring a session keeps its lights: only the colours change,
+    // and playback must not restart or the arcs be rebuilt.
+    if (previous && hasSameLights(previous, project)) {
+      this.recolorLayers();
+      return;
+    }
     this.rebuildArcs();
+  }
+
+  private markDirty(): void {
+    this.dirty = true;
   }
 
   setPointsPerSecond(value: number): void {
@@ -330,12 +363,14 @@ export class DomeView {
       (layer.dots.material as THREE.PointsMaterial).size = this.pointSize;
     }
     this.applyArcWidths();
+    this.markDirty();
   }
 
   setSurfaceOpacity(opacity: number): void {
     const clamped = Math.max(0, Math.min(1, opacity));
     this.surfaceMaterial.opacity = clamped;
     this.surfaceMesh.visible = clamped > 0.001;
+    this.markDirty();
   }
 
   getSurfaceOpacity(): number {
@@ -346,6 +381,7 @@ export class DomeView {
     const clamped = Math.max(0, Math.min(1, opacity));
     this.floorMaterial.opacity = clamped;
     this.floorMesh.visible = clamped > 0.001;
+    this.markDirty();
   }
 
   getFloorOpacity(): number {
@@ -357,6 +393,7 @@ export class DomeView {
   /** Smoothly returns to the centred, fully framed view, keeping the current viewing angle. */
   recenter(): void {
     this.userMovedCamera = false;
+    this.markDirty();
     const destination = this.framingDestination(true);
     if (this.reducedMotion) {
       this.cameraTween = null;
@@ -376,6 +413,7 @@ export class DomeView {
   }
 
   zoomBy(factor: number): void {
+    this.markDirty();
     this.cameraTween = null;
     this.userMovedCamera = true;
     const offset = this.camera.position.clone().sub(this.controls.target);
@@ -414,7 +452,17 @@ export class DomeView {
     };
   }
 
+  private readonly handleInteractionStart = (): void => {
+    this.interacting = true;
+  };
+
+  private readonly handleInteractionEnd = (): void => {
+    this.interacting = false;
+    this.fullRateUntil = performance.now() + SETTLE_MS;
+  };
+
   private readonly handleCameraStart = (): void => {
+    this.fullRateUntil = performance.now() + SETTLE_MS;
     this.cameraTween = null;
     this.userMovedCamera = true;
     for (const listener of this.cameraInteractionListeners) listener();
@@ -502,6 +550,7 @@ export class DomeView {
 
   /** Resumes the render loop after `freeze()` was called. */
   resume(): void {
+    this.markDirty();
     this.start();
   }
 
@@ -569,6 +618,7 @@ export class DomeView {
         line?.material.resolution.set(clientWidth, clientHeight);
       }
     }
+    this.markDirty();
     if (!this.userMovedCamera && !this.cameraTween) this.fitCameraNow();
   };
 
@@ -619,6 +669,28 @@ export class DomeView {
   }
 
   private tick(now: number): void {
+    const playing = this.playback.snapshot().isPlaying;
+    const fullRate =
+      this.dirty ||
+      playing ||
+      this.cameraTween !== null ||
+      this.interacting ||
+      now < this.fullRateUntil;
+
+    if (!fullRate) {
+      const drifting = this.cameraRotationDegPerSec > 0;
+      const pulsing = !this.reducedMotion && this.currentMarker.visible;
+      if (!drifting && !pulsing) {
+        // Nothing moves: skip the frame, unless the camera is still easing to a stop.
+        this.lastFrameTime = now;
+        if (!this.controls.update()) return;
+        this.renderer.render(this.scene, this.camera);
+        this.lastRenderTime = now;
+        return;
+      }
+      if (now - this.lastRenderTime < AMBIENT_FRAME_MS) return;
+    }
+
     const lastTime = this.lastFrameTime ?? now;
     const dt = Math.max(0, Math.min(0.1, (now - lastTime) / 1000));
     this.lastFrameTime = now;
@@ -631,6 +703,8 @@ export class DomeView {
 
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.dirty = false;
+    this.lastRenderTime = now;
   }
 
   private pulseMarker(seconds: number): void {
@@ -710,9 +784,12 @@ export class DomeView {
     this.markerHalo.visible = false;
 
     if (!this.project) return;
-    this.timeline = buildTimeline(this.project);
+    this.timeline = timelineOf(this.project);
     this.positions = resolveTimelinePositions(this.timeline);
     this.playback.setTimelineLength(this.timeline.length);
+    this.sessionRevealCounts = new Array<number>(this.project.sessions.length).fill(0);
+    this.lastRevealCount = -1;
+    this.markDirty();
 
     const project = this.project;
     const coreWidth = this.arcCoreWidth();
@@ -758,18 +835,47 @@ export class DomeView {
     this.updateRevealedPoints(0);
   }
 
+  /** Re-tints every arc, dot set, badge and the marker after a session colour changed. */
+  private recolorLayers(): void {
+    const project = this.project;
+    if (!project) return;
+    for (const [index, layer] of this.layers) {
+      const session = project.sessions[index];
+      if (!session) continue;
+      for (const line of [layer.core, layer.glow]) line?.material.color.set(session.color);
+      (layer.dots.material as THREE.PointsMaterial).color.set(session.color);
+      if (layer.badge) {
+        const old = layer.badge;
+        const badge = createNightBadge(index + 1, session.color);
+        badge.position.copy(old.position);
+        this.domeGroup.remove(old);
+        old.material.map?.dispose();
+        old.material.dispose();
+        this.domeGroup.add(badge);
+        layer.badge = badge;
+      }
+    }
+    // Forces the marker and badge visibility to be applied again.
+    this.lastRevealCount = -1;
+    this.updateRevealedPoints(this.playback.snapshot().revealCount);
+    this.markDirty();
+  }
+
   private updateRevealedPoints(revealCount: number): void {
     const clamped = Math.max(0, Math.min(revealCount, this.timeline.length));
+    // Called every frame; nothing to do until the reveal actually moves.
+    if (clamped === this.lastRevealCount) return;
 
-    // Count how many points belonging to each session appear in the revealed portion
-    const sessionPointCounts = new Map<number, number>();
-    for (let i = 0; i < clamped; i += 1) {
-      const sessionIndex = this.timeline[i]!.nightIndex - 1;
-      sessionPointCounts.set(sessionIndex, (sessionPointCounts.get(sessionIndex) ?? 0) + 1);
-    }
+    // Move the per-session counts only across the points between the old and new reveal.
+    const counts = this.sessionRevealCounts;
+    if (this.lastRevealCount < 0) counts.fill(0);
+    const from = Math.max(0, this.lastRevealCount);
+    for (let i = from; i < clamped; i += 1) counts[this.timeline[i]!.nightIndex - 1]! += 1;
+    for (let i = clamped; i < from; i += 1) counts[this.timeline[i]!.nightIndex - 1]! -= 1;
+    this.lastRevealCount = clamped;
 
     for (const [sessionIndex, layer] of this.layers) {
-      const count = sessionPointCounts.get(sessionIndex) ?? 0;
+      const count = counts[sessionIndex] ?? 0;
       layer.dots.geometry.setDrawRange(0, count);
       if (layer.badge) layer.badge.visible = count > 0;
       for (const line of [layer.core, layer.glow]) {
