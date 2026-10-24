@@ -29,12 +29,20 @@
 import type { DomeView } from '../render/dome_view';
 import type { OverlaySnapshot } from '../ui/overlay';
 import { renderOverlayTo } from '../ui/overlay';
+import { estimateExportSeconds } from './export_formats';
+
+const DEFAULT_FINAL_HOLD_SECONDS = 2;
 
 export interface VideoExportOptions {
   fps?: number;
   finalHoldSeconds?: number;
   bitsPerSecond?: number;
   mimeType?: string;
+  /** Output size in pixels; defaults to the on-screen canvas. */
+  width?: number;
+  height?: number;
+  /** Scale of the overlay drawing; defaults to the output width over the canvas width. */
+  overlayScale?: number;
   onProgress?: (state: VideoExportProgress) => void;
 }
 
@@ -68,17 +76,36 @@ export class VideoExporter {
     private readonly getOverlaySnapshot: () => OverlaySnapshot,
   ) {}
 
+  /** Seconds the export will take: it runs in real time at the current arc speed. */
+  estimateSeconds(finalHoldSeconds = DEFAULT_FINAL_HOLD_SECONDS): number {
+    return estimateExportSeconds(
+      this.domeView.playbackLength(),
+      this.domeView.getPointsPerSecond(),
+      finalHoldSeconds,
+    );
+  }
+
+  /** CSS width of the on-screen canvas, used to size the overlays of the "Window" format. */
+  windowClientWidth(): number {
+    return this.domeView.getCanvas().clientWidth;
+  }
+
+  /** The on-screen canvas size, which the "Window" format keeps. */
+  windowSize(): { width: number; height: number } {
+    return this.domeView.getCanvasDimensions();
+  }
+
   start(options: VideoExportOptions = {}): VideoExportHandle {
     this.cancelled = false;
 
     const promise = (async () => {
       const fps = options.fps ?? 30;
-      const finalHold = options.finalHoldSeconds ?? 2;
+      const finalHold = options.finalHoldSeconds ?? DEFAULT_FINAL_HOLD_SECONDS;
       const bitsPerSecond = options.bitsPerSecond ?? 5_000_000;
 
       const srcDims = this.domeView.getCanvasDimensions();
-      const width = toEven(srcDims.width);
-      const height = toEven(srcDims.height);
+      const width = toEven(options.width ?? srcDims.width);
+      const height = toEven(options.height ?? srcDims.height);
 
       const offscreen = document.createElement('canvas');
       offscreen.width = width;
@@ -127,73 +154,80 @@ export class VideoExporter {
         };
       });
 
-      this.domeView.freeze();
-      this.domeView.reset();
-
-      recorder.start();
-
       const dt = 1 / fps;
       const domCanvas = this.domeView.getCanvas();
       const clientWidth = domCanvas.clientWidth || width;
-      const scale = Math.max(1, width / clientWidth);
+      const scale = options.overlayScale ?? Math.max(1, width / clientWidth);
 
-      for (let frame = 0; frame < revealFrames; frame += 1) {
-        if (this.cancelled) break;
-        this.domeView.tickPlayback(dt);
-        this.domeView.renderOnce();
+      this.domeView.freeze();
+      this.domeView.reset();
+      this.domeView.beginExportView(width, height);
 
-        offCtx.fillStyle = 'rgb(8, 10, 18)';
-        offCtx.fillRect(0, 0, width, height);
-        offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
-        offCtx.save();
-        offCtx.scale(scale, scale);
-        renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
-        offCtx.restore();
+      try {
+        recorder.start();
+
+        for (let frame = 0; frame < revealFrames; frame += 1) {
+          if (this.cancelled) break;
+          this.domeView.tickPlayback(dt);
+          this.domeView.renderOnce();
+
+          offCtx.fillStyle = 'rgb(8, 10, 18)';
+          offCtx.fillRect(0, 0, width, height);
+          offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
+          offCtx.save();
+          offCtx.scale(scale, scale);
+          renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
+          offCtx.restore();
+
+          options.onProgress?.({
+            phase: 'rendering',
+            frame: frame + 1,
+            totalFrames,
+            secondsElapsed: (frame + 1) / fps,
+            secondsTotal: totalSeconds,
+          });
+
+          await frameDelay(dt);
+        }
+
+        for (let frame = 0; frame < holdFrames; frame += 1) {
+          if (this.cancelled) break;
+          this.domeView.renderHoldFrame(dt);
+
+          offCtx.fillStyle = 'rgb(8, 10, 18)';
+          offCtx.fillRect(0, 0, width, height);
+          offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
+          offCtx.save();
+          offCtx.scale(scale, scale);
+          renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
+          offCtx.restore();
+
+          options.onProgress?.({
+            phase: 'final-hold',
+            frame: revealFrames + frame + 1,
+            totalFrames,
+            secondsElapsed: revealSeconds + (frame + 1) / fps,
+            secondsTotal: totalSeconds,
+          });
+
+          await frameDelay(dt);
+        }
 
         options.onProgress?.({
-          phase: 'rendering',
-          frame: frame + 1,
+          phase: 'finalizing',
+          frame: totalFrames,
           totalFrames,
-          secondsElapsed: (frame + 1) / fps,
+          secondsElapsed: totalSeconds,
           secondsTotal: totalSeconds,
         });
 
-        await frameDelay(dt);
+        recorder.stop();
+      } finally {
+        // Whatever happened, give the screen its own size and loop back.
+        this.domeView.endExportView();
+        this.domeView.resume();
+        if (recorder.state !== 'inactive') recorder.stop();
       }
-
-      for (let frame = 0; frame < holdFrames; frame += 1) {
-        if (this.cancelled) break;
-        this.domeView.renderHoldFrame(dt);
-
-        offCtx.fillStyle = 'rgb(8, 10, 18)';
-        offCtx.fillRect(0, 0, width, height);
-        offCtx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
-        offCtx.save();
-        offCtx.scale(scale, scale);
-        renderOverlayTo(offCtx, width / scale, height / scale, this.getOverlaySnapshot());
-        offCtx.restore();
-
-        options.onProgress?.({
-          phase: 'final-hold',
-          frame: revealFrames + frame + 1,
-          totalFrames,
-          secondsElapsed: revealSeconds + (frame + 1) / fps,
-          secondsTotal: totalSeconds,
-        });
-
-        await frameDelay(dt);
-      }
-
-      options.onProgress?.({
-        phase: 'finalizing',
-        frame: totalFrames,
-        totalFrames,
-        secondsElapsed: totalSeconds,
-        secondsTotal: totalSeconds,
-      });
-
-      recorder.stop();
-      this.domeView.resume();
 
       if (this.cancelled) {
         throw new Error('Export cancelled');

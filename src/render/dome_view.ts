@@ -119,6 +119,14 @@ export class DomeView {
   /** Frames render at full rate until this time (ms, same clock as requestAnimationFrame). */
   private fullRateUntil = 0;
   private interacting = false;
+  /** Set while the video exporter renders at its own size, apart from the page layout. */
+  private exportView: {
+    width: number;
+    height: number;
+    aspect: number;
+    position: THREE.Vector3;
+    target: THREE.Vector3;
+  } | null = null;
   /** Revealed points per session and the reveal count they were computed for; -1 means unknown. */
   private sessionRevealCounts: number[] = [];
   private lastRevealCount = -1;
@@ -610,17 +618,64 @@ export class DomeView {
   resize = (): void => {
     const { clientWidth, clientHeight } = this.canvas;
     if (clientWidth === 0 || clientHeight === 0) return;
+    // While exporting, the drawing buffer keeps the video's size whatever the page does.
+    if (this.exportView) return;
     this.renderer.setSize(clientWidth, clientHeight, false);
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
-    for (const layer of this.layers.values()) {
-      for (const line of [layer.core, layer.glow]) {
-        line?.material.resolution.set(clientWidth, clientHeight);
-      }
-    }
+    this.setLineResolution(clientWidth, clientHeight);
     this.markDirty();
     if (!this.userMovedCamera && !this.cameraTween) this.fitCameraNow();
   };
+
+  private setLineResolution(width: number, height: number): void {
+    for (const layer of this.layers.values()) {
+      for (const line of [layer.core, layer.glow]) line?.material.resolution.set(width, height);
+    }
+  }
+
+  /**
+   * Starts rendering at exactly `width` x `height`, with the camera pulled back
+   * so the whole dome is in frame at that shape (keeping the current viewing
+   * angle). The on-screen canvas is hidden meanwhile, since its buffer no longer
+   * matches its shape. Pair with `endExportView`.
+   */
+  beginExportView(width: number, height: number): void {
+    if (this.exportView) return;
+    this.exportView = {
+      width,
+      height,
+      aspect: this.camera.aspect,
+      position: this.camera.position.clone(),
+      target: this.controls.target.clone(),
+    };
+    this.cameraTween = null;
+    this.canvas.style.visibility = 'hidden';
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(width, height, false);
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.setLineResolution(width, height);
+    const destination = this.framingDestination(true);
+    this.controls.target.copy(destination.target);
+    this.camera.position.copy(destination.position);
+    this.camera.lookAt(destination.target);
+  }
+
+  /** Returns to the on-screen size and to the camera the user had. */
+  endExportView(): void {
+    const saved = this.exportView;
+    if (!saved) return;
+    this.exportView = null;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    this.canvas.style.visibility = '';
+    this.camera.aspect = saved.aspect;
+    this.controls.target.copy(saved.target);
+    this.camera.position.copy(saved.position);
+    this.camera.lookAt(saved.target);
+    this.resize();
+    this.markDirty();
+  }
 
   dispose(): void {
     this.stop();
