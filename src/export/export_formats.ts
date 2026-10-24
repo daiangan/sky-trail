@@ -94,6 +94,14 @@ export function overlayScale(
   return size.width / logical;
 }
 
+/** The largest box of the given shape (width over height) that fits inside `maxWidth` x `maxHeight`. */
+export function fitInBox(aspect: number, maxWidth: number, maxHeight: number): PixelSize {
+  const safe = aspect > 0 ? aspect : 1;
+  return maxWidth / maxHeight < safe
+    ? { width: maxWidth, height: Math.round(maxWidth / safe) }
+    : { width: Math.round(maxHeight * safe), height: maxHeight };
+}
+
 /** Export runs in real time: the reveal at the arc speed, plus the final hold. */
 export function estimateExportSeconds(
   timelineLength: number,
