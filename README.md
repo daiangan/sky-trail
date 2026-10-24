@@ -66,6 +66,7 @@ Astrophotography raw data files are massive (often tens of gigabytes per session
 
 ### 🎥 Video Export
 
+- **Choose the Shape**: Pick 9:16 (Reels, TikTok, Shorts), 4:5 (Instagram feed), 1:1 or 16:9, at 1080p or 720p, or keep the window's own shape. The camera is pulled back automatically so the whole dome is always in frame, and the overlays are laid out for the chosen shape. Your choice is remembered.
 - **Frame-by-Frame Generation**: Renders a 30 fps animation walking through your timeline with exact synchronization between the 3D dome, camera rotation, and telemetry overlays.
 - **Final Hold State**: Automatically pauses on the final completed arc for 2 seconds to showcase the total capture journey.
 - **Ready to Share**: Exports directly as a WebM video you can post on YouTube, Discord or X, or import into your favorite video editor.
@@ -113,7 +114,7 @@ SkyTrail is built as a pure client-side Single Page Application (SPA) designed f
 - **3D Rendering**: <a href="https://threejs.org/" target="_blank" rel="noopener noreferrer">Three.js</a> (WebGL with `preserveDrawingBuffer` support for video capture, fat lines for the arcs)
 - **Celestial Mechanics**: <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener noreferrer">astronomy-engine</a> (NOVAS-derived high-precision horizontal coordinate transformations)
 - **Bundler & Dev Server**: <a href="https://vitejs.dev/" target="_blank" rel="noopener noreferrer">Vite</a>
-- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (31 suites, 259 unit and integration tests)
+- **Test Suite**: <a href="https://vitest.dev/" target="_blank" rel="noopener noreferrer">Vitest</a> (32 suites, 268 unit and integration tests)
 - **Code Quality**: ESLint (flat config) + Prettier
 - **CI/CD**: GitHub Actions type-check, lint, test and build every pull request and every push to `main`; the same checks gate the deployment to GitHub Pages.
 
@@ -162,6 +163,7 @@ The "Try a demo" button loads simulated sessions built by a small seeded generat
 
 Video generation does not rely on screen-recording hacks. Instead:
 
+0. The 3D view switches to the chosen output size and the camera is reframed for that shape (keeping your viewing angle); the on-screen canvas is hidden meanwhile and restored afterwards, also if the export is cancelled or fails.
 1. Playback is frozen and stepped at a fixed $\Delta t = 1/\text{fps}$.
 2. Each frame triggers a synchronous WebGL scene render.
 3. The WebGL canvas is composited onto an offscreen 2D canvas along with the scaled vector HUD overlays (counter, stats, altitude chart), and the frame size is snapped to even dimensions.
@@ -223,7 +225,7 @@ src/
 ├── render/     # Three.js dome (wireframe, arcs, camera framing), playback controller & shared defaults
 └── ui/         # Session manager, controls panel, HUD overlay, altitude chart, view toolbar,
                 # mobile drawers, notifications, file loading & dialogs
-tests/          # Vitest test suites (259 tests), mirroring the structure of src/
+tests/          # Vitest test suites (268 tests), mirroring the structure of src/
 ```
 
 ---
