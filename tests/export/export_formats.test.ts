@@ -3,6 +3,7 @@ import {
   EXPORT_FORMATS,
   estimateExportSeconds,
   exportSize,
+  fitInBox,
   formatExportDuration,
   overlayScale,
 } from '../../src/export/export_formats';
@@ -68,5 +69,21 @@ describe('export duration', () => {
     expect(formatExportDuration(22)).toBe('22 s');
     expect(formatExportDuration(60)).toBe('1 min');
     expect(formatExportDuration(72.4)).toBe('1 min 12 s');
+  });
+});
+
+describe('fitInBox', () => {
+  it('fits a tall shape by its height and a wide one by its width', () => {
+    expect(fitInBox(9 / 16, 220, 330)).toEqual({ width: 186, height: 330 });
+    expect(fitInBox(16 / 9, 220, 330)).toEqual({ width: 220, height: 124 });
+  });
+
+  it('fills the box for the shape of the box itself and fits a square by its short side', () => {
+    expect(fitInBox(220 / 330, 220, 330)).toEqual({ width: 220, height: 330 });
+    expect(fitInBox(1, 220, 330)).toEqual({ width: 220, height: 220 });
+  });
+
+  it('treats a nonsense shape as square', () => {
+    expect(fitInBox(0, 100, 100)).toEqual({ width: 100, height: 100 });
   });
 });

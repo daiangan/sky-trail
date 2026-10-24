@@ -29,7 +29,7 @@
 import type { DomeView } from '../render/dome_view';
 import type { OverlaySnapshot } from '../ui/overlay';
 import { renderOverlayTo } from '../ui/overlay';
-import { estimateExportSeconds } from './export_formats';
+import { estimateExportSeconds, type PixelSize } from './export_formats';
 
 const DEFAULT_FINAL_HOLD_SECONDS = 2;
 
@@ -83,6 +83,42 @@ export class VideoExporter {
       this.domeView.getPointsPerSecond(),
       finalHoldSeconds,
     );
+  }
+
+  /**
+   * Shows the finished animation (every point revealed) so a preview has
+   * something to frame. Returns a function that puts the reveal back where it was.
+   */
+  previewEndState(): () => void {
+    const previous = this.domeView.getRevealCount();
+    this.domeView.seek(this.domeView.playbackLength());
+    return () => this.domeView.seek(previous);
+  }
+
+  /**
+   * Draws one frame exactly as the export would, into `target`, scaled down:
+   * the same camera framing for the shape, with the overlays composited on top.
+   * `fullSize` is the real output size and `fullOverlayScale` its overlay scale.
+   */
+  renderPreview(target: HTMLCanvasElement, fullSize: PixelSize, fullOverlayScale: number): void {
+    const ctx = target.getContext('2d');
+    if (!ctx) return;
+    const { width, height } = target;
+    const domCanvas = this.domeView.getCanvas();
+    this.domeView.beginExportView(width, height);
+    try {
+      this.domeView.renderOnce();
+      ctx.fillStyle = 'rgb(8, 10, 18)';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(domCanvas, 0, 0, domCanvas.width, domCanvas.height, 0, 0, width, height);
+      const scale = fullOverlayScale * (width / fullSize.width);
+      ctx.save();
+      ctx.scale(scale, scale);
+      renderOverlayTo(ctx, width / scale, height / scale, this.getOverlaySnapshot());
+      ctx.restore();
+    } finally {
+      this.domeView.endExportView();
+    }
   }
 
   /** CSS width of the on-screen canvas, used to size the overlays of the "Window" format. */

@@ -14,6 +14,7 @@ import {
   EXPORT_QUALITIES,
   exportSize,
   findFormat,
+  fitInBox,
   formatExportDuration,
   overlayScale,
   type ExportFormatId,
@@ -36,6 +37,9 @@ export interface ExportDialogApi {
 type Stage = 'settings' | 'running' | 'done';
 
 const STORAGE_KEY = 'skyTrail.exportChoice.v1';
+/** The preview fits in this box, in CSS pixels, whatever the shape. */
+const PREVIEW_MAX_WIDTH = 220;
+const PREVIEW_MAX_HEIGHT = 330;
 
 function loadChoice(): { format: ExportFormatId; quality: ExportQualityId } {
   const fallback = { format: DEFAULT_EXPORT_FORMAT, quality: DEFAULT_EXPORT_QUALITY };
@@ -74,6 +78,7 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
   // --- step 1: shape and quality ---------------------------------------
   let choice = loadChoice();
   let activeExporter: VideoExporter | null = null;
+  let restorePreview: (() => void) | null = null;
   let activeOptions: VideoExportOptions = {};
 
   const formatInputs = new Map<ExportFormatId, HTMLInputElement>();
@@ -137,10 +142,21 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     'Cancel',
   ]);
   const settingsButtons = el('div', { class: 'dialog__buttons' }, [settingsCancelBtn, startBtn]);
+  // What the video will frame, drawn the same way the export draws it.
+  const previewCanvas = el('canvas', {
+    class: 'export-preview__canvas',
+    role: 'img',
+    'aria-label': 'Preview of the last frame of the video',
+  }) as HTMLCanvasElement;
+  const previewBox = el('div', { class: 'export-preview' }, [
+    el('div', { class: 'export-preview__stage' }, [previewCanvas]),
+    el('p', { class: 'export-preview__caption' }, ['Last frame of the video']),
+  ]);
   const settingsPane = el('div', { class: 'export-settings' }, [
-    formatGroup,
-    qualityGroup,
-    summary,
+    el('div', { class: 'export-settings__body' }, [
+      previewBox,
+      el('div', { class: 'export-settings__controls' }, [formatGroup, qualityGroup, summary]),
+    ]),
     settingsButtons,
   ]);
 
@@ -154,6 +170,18 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     const size = exportSize(choice.format, choice.quality, activeExporter.windowSize());
     const seconds = formatExportDuration(activeExporter.estimateSeconds());
     summary.textContent = `${size.width} × ${size.height} px · 30 fps · about ${seconds}, recorded in real time.`;
+
+    // Draw the preview at twice its on-screen size so it stays sharp on dense screens.
+    const box = fitInBox(size.width / size.height, PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT);
+    previewCanvas.style.width = `${box.width}px`;
+    previewCanvas.style.height = `${box.height}px`;
+    previewCanvas.width = box.width * 2;
+    previewCanvas.height = box.height * 2;
+    activeExporter.renderPreview(
+      previewCanvas,
+      size,
+      overlayScale(choice.format, size, activeExporter.windowClientWidth()),
+    );
   }
 
   function showStage(next: Stage): void {
@@ -164,6 +192,7 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     progressText.style.display = running ? '' : 'none';
     buttons.style.display = running ? '' : 'none';
     subtitle.textContent = running ? RUNNING_SUBTITLE : SETTINGS_SUBTITLE;
+    dialog.classList.toggle('dialog--wide', next === 'settings');
   }
   let stage: Stage = 'settings';
   const progressBar = el('div', { class: 'export-progress__bar' }, [
@@ -205,6 +234,9 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
 
   function close(): void {
     root.classList.remove('dialog-root--open');
+    // Closing without exporting puts the animation back where the user had it.
+    restorePreview?.();
+    restorePreview = null;
     if (currentResolve) {
       currentResolve(currentResult);
       currentResolve = null;
@@ -253,6 +285,7 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
     const exporter = activeExporter;
     if (!exporter) return;
     saveChoice(choice);
+    restorePreview = null;
     const size = exportSize(choice.format, choice.quality, exporter.windowSize());
     const clientWidth = exporter.windowClientWidth();
     resetUi();
@@ -302,6 +335,7 @@ export function mountExportDialog(root: HTMLElement): ExportDialogApi {
         choice = loadChoice();
         resetUi();
         showStage('settings');
+        restorePreview = exporter.previewEndState();
         refreshSummary();
         root.classList.add('dialog-root--open');
         (formatInputs.get(choice.format) ?? startBtn).focus();

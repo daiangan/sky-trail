@@ -591,6 +591,7 @@ export class DomeView {
 
   /** Render one frame to the WebGL canvas (no playback advance). */
   renderOnce(): void {
+    this.updateRevealedPoints(this.playback.snapshot().revealCount);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
@@ -609,6 +610,11 @@ export class DomeView {
 
   playbackLength(): number {
     return this.playback.snapshot().timelineLength;
+  }
+
+  /** How many points are revealed right now. */
+  getRevealCount(): number {
+    return this.playback.snapshot().revealCount;
   }
 
   onPlaybackChange(listener: (snapshot: PlaybackSnapshot) => void): () => void {
